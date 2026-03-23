@@ -1,0 +1,258 @@
+import { useEffect, useState } from 'react'
+import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2 } from 'lucide-react'
+import * as ContextMenu from '@radix-ui/react-context-menu'
+import { Button } from '@renderer/components/ui/button'
+import { Input } from '@renderer/components/ui/input'
+import { ScrollArea } from '@renderer/components/ui/scroll-area'
+import { DatabaseTree } from '@renderer/components/explorer/DatabaseTree'
+import { ConnectionDialog } from '@renderer/components/explorer/ConnectionDialog'
+import { useConnectionStore } from '@renderer/store/connectionStore'
+import { useExplorerStore } from '@renderer/store/explorerStore'
+import { trpc } from '@renderer/lib/trpc'
+import type { ConnectionProfile } from '@shared/types'
+
+export function Sidebar() {
+  const [showConnectionDialog, setShowConnectionDialog] = useState(false)
+  const [editProfile, setEditProfile] = useState<ConnectionProfile | null>(null)
+  const [search, setSearch] = useState('')
+  const [clipboard, setClipboard] = useState<{
+    connectionId: string
+    database: string
+  } | null>(null)
+
+  const { profiles, activeConnection, connectedIds, loadProfiles, connect, disconnect, setActive } =
+    useConnectionStore()
+  const { databases, loadDatabases, clear } = useExplorerStore()
+  const isConnected = activeConnection?.status === 'connected'
+
+  useEffect(() => {
+    loadProfiles()
+  }, [])
+
+  useEffect(() => {
+    if (isConnected) {
+      loadDatabases()
+    } else {
+      clear()
+    }
+  }, [isConnected, activeConnection?.profileId])
+
+  const activeProfile = profiles.find((p) => p.id === activeConnection?.profileId)
+
+  const handleCopyDatabase = (connectionId: string, database: string) => {
+    setClipboard({ connectionId, database })
+  }
+
+  const handlePasteDatabase = async (targetConnectionId: string) => {
+    if (!clipboard) return
+    const targetProfile = profiles.find((p) => p.id === targetConnectionId)
+    if (targetProfile?.isProduction) {
+      alert('Cannot paste into a production connection. Production connections are protected from mass write operations.')
+      return
+    }
+
+    const dbName = prompt(
+      `Paste database "${clipboard.database}" as:`,
+      clipboard.database
+    )
+    if (!dbName) return
+
+    if (
+      !confirm(
+        `Copy "${clipboard.database}" → "${dbName}" on "${targetProfile?.name}"?\n\nThis will copy all collections and documents.`
+      )
+    )
+      return
+
+    try {
+      await trpc.migration.copyDatabase.mutate({
+        sourceConnectionId: clipboard.connectionId,
+        sourceDatabase: clipboard.database,
+        targetConnectionId,
+        targetDatabase: dbName,
+        dropTarget: false
+      })
+      alert('Database copy started. Check progress in the console.')
+      loadDatabases()
+    } catch (err) {
+      alert(`Failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-sidebar-border p-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Explorer
+        </span>
+        <div className="flex gap-1">
+          {isConnected && (
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={loadDatabases}>
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => setShowConnectionDialog(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="p-2">
+        <Input
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-7 text-xs"
+        />
+      </div>
+
+      {/* Connection list + trees */}
+      <ScrollArea className="flex-1 px-2">
+        {profiles.length === 0 ? (
+          <p className="py-4 text-center text-xs text-muted-foreground">
+            No connections yet.
+            <br />
+            Click + to add one.
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {profiles.map((profile) => {
+              const isThisConnected = connectedIds.includes(profile.id)
+              const isThisActive = activeConnection?.profileId === profile.id
+
+              return (
+                <ContextMenu.Root key={profile.id}>
+                  <ContextMenu.Trigger asChild>
+                    <div>
+                      {/* Connection header */}
+                      <button
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent ${
+                          isThisActive ? 'bg-sidebar-accent' : ''
+                        }`}
+                        onClick={() => {
+                          if (isThisConnected) {
+                            setActive(profile.id)
+                          } else {
+                            connect(profile.id)
+                          }
+                        }}
+                      >
+                        {isThisConnected ? (
+                          <PlugZap className="h-3.5 w-3.5 text-emerald-400" />
+                        ) : (
+                          <Plug className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                        <div
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: profile.color || '#6b7280' }}
+                        />
+                        <span className="flex-1 truncate">{profile.name}</span>
+                        {profile.isProduction && (
+                          <ShieldAlert className="h-3.5 w-3.5 text-red-400" title="Production" />
+                        )}
+                      </button>
+
+                      {/* Show database tree if this is the active connection */}
+                      {isThisActive && isConnected && (
+                        <div className="ml-2">
+                          <DatabaseTree
+                            databases={databases}
+                            searchFilter={search}
+                            connectionId={profile.id}
+                            onCopyDatabase={(db) => handleCopyDatabase(profile.id, db)}
+                            canPaste={clipboard !== null && clipboard.connectionId !== profile.id}
+                            onPasteDatabase={() => handlePasteDatabase(profile.id)}
+                            isProduction={profile.isProduction}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content className="min-w-[180px] rounded-md border border-border bg-popover p-1 text-sm shadow-md">
+                      {isThisConnected ? (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => disconnect(profile.id)}
+                        >
+                          <Plug className="h-3.5 w-3.5" />
+                          Disconnect
+                        </ContextMenu.Item>
+                      ) : (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => connect(profile.id)}
+                        >
+                          <PlugZap className="h-3.5 w-3.5" />
+                          Connect
+                        </ContextMenu.Item>
+                      )}
+                      <ContextMenu.Separator className="my-1 h-px bg-border" />
+                      <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                        onSelect={() => setEditProfile(profile)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit Connection
+                      </ContextMenu.Item>
+                      <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none hover:bg-destructive/10"
+                        onSelect={async () => {
+                          if (!confirm(`Delete connection "${profile.name}"?`)) return
+                          if (isThisConnected) await disconnect(profile.id)
+                          await useConnectionStore.getState().deleteProfile(profile.id)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete Connection
+                      </ContextMenu.Item>
+                      {clipboard && isThisConnected && (
+                        <>
+                          <ContextMenu.Separator className="my-1 h-px bg-border" />
+                          <ContextMenu.Item
+                            className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent ${
+                              profile.isProduction ? 'text-muted-foreground' : ''
+                            }`}
+                            onSelect={() => handlePasteDatabase(profile.id)}
+                            disabled={profile.isProduction}
+                          >
+                            <ClipboardPaste className="h-3.5 w-3.5" />
+                            Paste "{clipboard.database}"
+                            {profile.isProduction && ' (blocked)'}
+                          </ContextMenu.Item>
+                        </>
+                      )}
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
+              )
+            })}
+          </div>
+        )}
+
+        {clipboard && (
+          <div className="mt-2 rounded-md border border-dashed border-primary/30 bg-primary/5 px-2 py-1.5 text-[10px] text-primary">
+            Copied: {clipboard.database}
+          </div>
+        )}
+      </ScrollArea>
+
+      {(showConnectionDialog || editProfile) && (
+        <ConnectionDialog
+          onClose={() => {
+            setShowConnectionDialog(false)
+            setEditProfile(null)
+          }}
+          editProfile={editProfile || undefined}
+        />
+      )}
+    </div>
+  )
+}

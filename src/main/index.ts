@@ -1,0 +1,128 @@
+import { app, shell, BrowserWindow, nativeImage } from 'electron'
+import { join } from 'path'
+import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { createIPCHandler } from 'electron-trpc/main'
+import { appRouter } from './trpc/router'
+import * as mongoService from './services/mongodb'
+import * as claudeService from './services/claude'
+import { startMcpServer, stopMcpServer } from './mcp/server'
+
+let mcpPort: number = 27088
+const APP_VERSION = '0.1.0'
+
+function createSplashWindow(): BrowserWindow {
+  const icon = nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
+
+  const splash = new BrowserWindow({
+    width: 420,
+    height: 480,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    icon,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  splash.loadFile(join(__dirname, '../../resources/splash.html'))
+
+  splash.center()
+  splash.show()
+
+  return splash
+}
+
+function createWindow(): BrowserWindow {
+  const icon = nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
+
+  const mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 600,
+    show: false,
+    title: 'MongoLens',
+    icon,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  return mainWindow
+}
+
+app.whenReady().then(async () => {
+  electronApp.setAppUserModelId('com.mongolens.app')
+
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
+  })
+
+  // Show splash
+  const splash = createSplashWindow()
+
+  // Start MCP server while splash is showing
+  try {
+    mcpPort = await startMcpServer()
+    console.log(`MongoLens MCP server running on port ${mcpPort}`)
+  } catch (err) {
+    console.error('Failed to start MCP server:', err)
+  }
+
+  // Create main window (hidden)
+  const mainWindow = createWindow()
+  claudeService.setMainWindow(mainWindow)
+  createIPCHandler({ router: appRouter, windows: [mainWindow] })
+
+  // Wait for main window to be ready, then swap
+  mainWindow.once('ready-to-show', () => {
+    // Keep splash visible for at least 3 seconds
+    const splashMinTime = 3000
+    const splashStart = Date.now()
+    const remaining = Math.max(0, splashMinTime - (Date.now() - splashStart))
+
+    setTimeout(() => {
+      splash.destroy()
+      mainWindow.show()
+      if (is.dev) {
+        mainWindow.webContents.openDevTools()
+      }
+    }, remaining)
+  })
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const win = createWindow()
+      createIPCHandler({ router: appRouter, windows: [win] })
+    }
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
+
+app.on('before-quit', async () => {
+  await stopMcpServer()
+  await mongoService.disconnectAll()
+})

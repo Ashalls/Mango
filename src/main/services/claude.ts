@@ -1,0 +1,232 @@
+import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk'
+import type { BrowserWindow } from 'electron'
+import { DEFAULT_MCP_PORT } from '@shared/constants'
+import * as configService from './config'
+import * as mongoService from './mongodb'
+
+let mainWindow: BrowserWindow | null = null
+let activeAbortController: AbortController | null = null
+
+export function setMainWindow(win: BrowserWindow): void {
+  mainWindow = win
+}
+
+function emitToRenderer(event: string, data: unknown): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(event, data)
+  }
+}
+
+interface ChatContext {
+  connectionName?: string
+  connectionUri?: string
+  database?: string
+  collection?: string
+  currentFilter?: Record<string, unknown>
+  resultCount?: number
+  page?: number
+  totalPages?: number
+  openDocumentId?: string
+}
+
+function buildSystemPrompt(context: ChatContext): string {
+  const connections = configService.loadConnections()
+  const connectedIds = mongoService.getConnectedIds()
+  const activeId = mongoService.getActiveConnectionId()
+
+  const lines = [
+    'You are an assistant embedded in MongoLens, a MongoDB client application.',
+    'You have access to MongoDB tools via MCP that let you query, modify, and explore databases.',
+    'When you run a query, the results appear in the user\'s table view automatically.',
+    '',
+    '## CRITICAL SAFETY RULES',
+    '- NEVER write to a connection marked [PRODUCTION] or [claude:readonly].',
+    '- If asked to copy data, you may READ from production but NEVER WRITE to it.',
+    '- Mutation tools will be blocked by the system on readonly connections, but you should also refuse proactively.',
+    '- Before making ANY change to a production or live database, explicitly warn the user and ask for confirmation.',
+    '- You can switch between connections using mongo_switch_connection to read from one and write to another.',
+    '',
+    '## Connected Databases',
+  ]
+
+  for (const c of connections) {
+    const connected = connectedIds.includes(c.id) ? 'CONNECTED' : 'disconnected'
+    const active = c.id === activeId ? ' (ACTIVE - currently focused)' : ''
+    const prod = c.isProduction ? ' [PRODUCTION]' : ''
+    const access = c.claudeAccess || (c.isProduction ? 'readonly' : 'readwrite')
+    lines.push(`- ${c.name} (id: ${c.id}): ${connected}${active}${prod} [claude:${access}]`)
+  }
+
+  lines.push('')
+  lines.push('## Current Focus')
+
+  if (context.connectionName) {
+    lines.push(`Connection: ${context.connectionName}`)
+  }
+  if (context.database) {
+    lines.push(`Database: ${context.database}`)
+  }
+  if (context.collection) {
+    lines.push(`Collection: ${context.collection}`)
+  }
+  if (context.currentFilter && Object.keys(context.currentFilter).length > 0) {
+    lines.push(`Current query filter: ${JSON.stringify(context.currentFilter)}`)
+  }
+  if (context.resultCount !== undefined) {
+    lines.push(
+      `Results in view: ${context.resultCount} documents (page ${context.page ?? 1} of ${context.totalPages ?? 1})`
+    )
+  }
+  if (context.openDocumentId) {
+    lines.push(`Open document: ${context.openDocumentId}`)
+  }
+
+  return lines.join('\n')
+}
+
+export async function sendMessage(
+  message: string,
+  context: ChatContext,
+  mcpPort: number = DEFAULT_MCP_PORT
+): Promise<void> {
+  if (activeAbortController) {
+    activeAbortController.abort()
+  }
+  activeAbortController = new AbortController()
+
+  const messageId = crypto.randomUUID()
+
+  emitToRenderer('claude:stream-start', { messageId })
+
+  try {
+    const q = claudeQuery({
+      prompt: message,
+      options: {
+        systemPrompt: buildSystemPrompt(context),
+        model: 'claude-sonnet-4-5-20250929',
+        abortController: activeAbortController,
+        mcpServers: {
+          mongolens: {
+            type: 'http',
+            url: `http://127.0.0.1:${mcpPort}/mcp`
+          }
+        },
+        allowedTools: [
+          'mcp__mongolens__mongo_list_connections',
+          'mcp__mongolens__mongo_connect',
+          'mcp__mongolens__mongo_connection_status',
+          'mcp__mongolens__mongo_list_databases',
+          'mcp__mongolens__mongo_list_collections',
+          'mcp__mongolens__mongo_collection_schema',
+          'mcp__mongolens__mongo_find',
+          'mcp__mongolens__mongo_count',
+          'mcp__mongolens__mongo_aggregate',
+          'mcp__mongolens__mongo_distinct',
+          'mcp__mongolens__mongo_explain',
+          'mcp__mongolens__mongo_insert_one',
+          'mcp__mongolens__mongo_update_one',
+          'mcp__mongolens__mongo_delete_one',
+          'mcp__mongolens__mongo_delete_many'
+        ],
+        tools: [],
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        maxTurns: 10,
+        persistSession: false
+      }
+    })
+
+    let fullText = ''
+    const seenToolCalls = new Set<string>()
+
+    for await (const msg of q) {
+      if (msg.type === 'assistant') {
+        const textBlocks = msg.message.content.filter(
+          (b: { type: string }) => b.type === 'text'
+        )
+        const text = textBlocks
+          .map((b: { type: string; text: string }) => b.text)
+          .join('')
+
+        if (text && text !== fullText) {
+          fullText = text
+          emitToRenderer('claude:text-delta', { messageId, text: fullText })
+        }
+
+        // Tool use blocks
+        const toolUseBlocks = msg.message.content.filter(
+          (b: { type: string }) => b.type === 'tool_use'
+        )
+        for (const block of toolUseBlocks) {
+          const tb = block as {
+            type: string
+            id: string
+            name: string
+            input: Record<string, unknown>
+          }
+          if (!seenToolCalls.has(tb.id)) {
+            seenToolCalls.add(tb.id)
+            emitToRenderer('claude:tool-use', {
+              messageId,
+              toolCall: {
+                id: tb.id,
+                name: tb.name,
+                input: tb.input,
+                status: 'running'
+              }
+            })
+          }
+        }
+
+        // Tool result blocks
+        const toolResultBlocks = msg.message.content.filter(
+          (b: { type: string }) => b.type === 'tool_result'
+        )
+        for (const block of toolResultBlocks) {
+          const tr = block as { type: string; tool_use_id: string; content: unknown }
+          emitToRenderer('claude:tool-result', {
+            messageId,
+            toolUseId: tr.tool_use_id,
+            result:
+              typeof tr.content === 'string' ? tr.content : JSON.stringify(tr.content),
+            status: 'success'
+          })
+        }
+      } else if (msg.type === 'result') {
+        // Use result text if we didn't get any assistant text
+        const finalText = fullText || msg.result || ''
+        emitToRenderer('claude:stream-end', {
+          messageId,
+          text: finalText,
+          cost: msg.total_cost_usd
+        })
+        return // Done — exit cleanly
+      }
+    }
+
+    // Generator exhausted without a result message
+    emitToRenderer('claude:stream-end', { messageId, text: fullText || '' })
+  } catch (err) {
+    const errorMessage =
+      err instanceof Error && err.name === 'AbortError'
+        ? ''
+        : err instanceof Error
+          ? err.message
+          : 'Unknown error'
+
+    emitToRenderer('claude:stream-end', {
+      messageId,
+      text: errorMessage ? `Error: ${errorMessage}` : fullText || '',
+      aborted: err instanceof Error && err.name === 'AbortError'
+    })
+  } finally {
+    activeAbortController = null
+  }
+}
+
+export function abortCurrentQuery(): void {
+  if (activeAbortController) {
+    activeAbortController.abort()
+    activeAbortController = null
+  }
+}
