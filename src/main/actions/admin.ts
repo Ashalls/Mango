@@ -22,3 +22,36 @@ export async function listIndexes(
   const db = mongoService.getDb(database)
   return db.collection(collection).indexes()
 }
+
+export async function createIndex(
+  database: string,
+  collection: string,
+  fields: Record<string, number | string>,
+  options: {
+    unique?: boolean
+    sparse?: boolean
+    expireAfterSeconds?: number
+    partialFilterExpression?: Record<string, unknown>
+    name?: string
+  } = {}
+): Promise<string> {
+  const db = mongoService.getDb(database)
+  return db.collection(collection).createIndex(fields, options)
+}
+
+export async function dropIndex(
+  database: string,
+  collection: string,
+  indexName: string
+): Promise<void> {
+  const db = mongoService.getDb(database)
+  await db.collection(collection).dropIndex(indexName)
+}
+
+export async function getIndexStats(
+  database: string,
+  collection: string
+): Promise<Record<string, unknown>[]> {
+  const db = mongoService.getDb(database)
+  return db.collection(collection).aggregate([{ $indexStats: {} }]).toArray()
+}
