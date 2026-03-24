@@ -123,6 +123,11 @@ function buildSystemPrompt(context: ChatContext): string {
       lines.push('')
       lines.push(formatted)
     }
+
+    lines.push('')
+    lines.push('## Codebase Analysis')
+    lines.push(`Database "${context.database}" has a linked codebase at: ${dbCodebasePath}`)
+    lines.push('Use the mongo_search_codebase tool to search for specific terms in the codebase (collection names, field names, patterns, etc.).')
   }
 
   return lines.join('\n')
@@ -179,7 +184,8 @@ export async function sendMessage(
           'mcp__mango__mongo_create_index',
           'mcp__mango__mongo_drop_index',
           'mcp__mango__mongo_changelog',
-          'mcp__mango__mongo_rollback'
+          'mcp__mango__mongo_rollback',
+          'mcp__mango__mongo_search_codebase'
         ],
         tools: [],
         permissionMode: 'bypassPermissions',

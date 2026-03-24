@@ -196,6 +196,14 @@ export function Sidebar() {
                                 databaseCodebasePaths: paths
                               })
                             }}
+                            onClearDbCodebasePath={async (dbName) => {
+                              const paths = { ...(profile.databaseCodebasePaths || {}) }
+                              delete paths[dbName]
+                              await useConnectionStore.getState().saveProfile({
+                                ...profile,
+                                databaseCodebasePaths: paths
+                              })
+                            }}
                             onToggleDbClaude={async (dbName) => {
                               const defaultAccess = profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')
                               const overrides = { ...(profile.claudeDbOverrides || {}) }

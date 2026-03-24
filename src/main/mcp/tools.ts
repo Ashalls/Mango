@@ -402,6 +402,29 @@ export function registerTools(server: McpServer): void {
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
   })
 
+  // --- Codebase search tool ---
+  server.registerTool('mongo_search_codebase', {
+    description: 'Search the linked codebase for a database/collection for specific terms. Returns matching code excerpts. Only works if a codebase path is configured for the database.',
+    inputSchema: {
+      database: z.string().describe('Database name (must have a linked codebase path)'),
+      searchTerms: z.array(z.string()).describe('Terms to search for in the codebase (e.g. collection names, field names, function names)')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ database, searchTerms }) => {
+    const activeId = mongoService.getActiveConnectionId()
+    if (!activeId) return { content: [{ type: 'text', text: 'No active connection' }], isError: true }
+    const connections = configService.loadConnections()
+    const profile = connections.find((c) => c.id === activeId)
+    const codebasePath = profile?.databaseCodebasePaths?.[database]
+    if (!codebasePath) {
+      return { content: [{ type: 'text', text: `No codebase path linked for database "${database}". The user can link one by right-clicking the database in the sidebar.` }], isError: true }
+    }
+    const { scanCodebase, formatContext } = await import('../services/codebaseContext')
+    const ctx = scanCodebase(codebasePath, searchTerms)
+    const formatted = formatContext(ctx)
+    return { content: [{ type: 'text', text: formatted || 'No matching code found for the given search terms.' }] }
+  })
+
   // --- Change log tools ---
   server.registerTool('mongo_changelog', {
     description: 'View the change log of all mutations made by Claude. Use this to review or rollback changes.',
