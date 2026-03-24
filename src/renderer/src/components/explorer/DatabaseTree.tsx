@@ -136,6 +136,9 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 )}
                 <Database className="h-3.5 w-3.5 text-amber-400" />
                 <span className="truncate">{db.name}</span>
+                {databaseCodebasePaths?.[db.name] && (
+                  <FolderOpen className="h-3 w-3 text-green-400 shrink-0" title={`Linked: ${databaseCodebasePaths[db.name]}`} />
+                )}
                 {(() => {
                   const dbOverride = claudeDbOverrides?.[db.name]
                   if (!dbOverride) return null
