@@ -6,7 +6,7 @@ import { useConnectionStore } from '@renderer/store/connectionStore'
 
 interface ConnectionDialogProps {
   onClose: () => void
-  editProfile?: { id: string; name: string; uri: string; color?: string; isProduction?: boolean; claudeAccess?: 'readonly' | 'readwrite'; codebasePath?: string }
+  editProfile?: { id: string; name: string; uri: string; color?: string; isProduction?: boolean; claudeAccess?: 'readonly' | 'readwrite' }
 }
 
 export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps) {
@@ -17,7 +17,6 @@ export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps
   const [claudeAccess, setClaudeAccess] = useState<'readonly' | 'readwrite'>(
     editProfile?.claudeAccess || (editProfile?.isProduction ? 'readonly' : 'readwrite')
   )
-  const [codebasePath, setCodebasePath] = useState(editProfile?.codebasePath || '')
   const [showUri, setShowUri] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,8 +33,7 @@ export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps
         uri: uri.trim(),
         color,
         isProduction,
-        claudeAccess,
-        codebasePath: codebasePath.trim() || undefined
+        claudeAccess
       })
       const profiles = useConnectionStore.getState().profiles
       const saved = profiles.find((p) => p.name === name.trim())
@@ -176,19 +174,6 @@ export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps
             </div>
           </div>
 
-          {/* Codebase path */}
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Codebase Path (for Claude context)</label>
-            <input
-              className="h-8 w-full rounded border border-border bg-background px-2 text-sm"
-              placeholder="/path/to/your/project/src"
-              value={codebasePath}
-              onChange={(e) => setCodebasePath(e.target.value)}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Claude will scan this folder for code that references your collections
-            </p>
-          </div>
         </div>
 
         {error && (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -19,9 +19,11 @@ interface DatabaseTreeProps {
   claudeAccess?: 'readonly' | 'readwrite'
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
   onToggleDbClaude?: (dbName: string) => void
+  databaseCodebasePaths?: Record<string, string>
+  onSetDbCodebasePath?: (dbName: string) => void
 }
 
-export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude }: DatabaseTreeProps) {
+export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath }: DatabaseTreeProps) {
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set())
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
@@ -197,6 +199,23 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         </ContextMenu.Item>
                       )
                     })()}
+                  </>
+                )}
+                {onSetDbCodebasePath && (
+                  <>
+                    <ContextMenu.Separator className="my-1 h-px bg-border" />
+                    <ContextMenu.Item
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                      onSelect={() => onSetDbCodebasePath(db.name)}
+                    >
+                      <FolderOpen className={`h-3.5 w-3.5 ${databaseCodebasePaths?.[db.name] ? 'text-green-400' : ''}`} />
+                      Set Codebase Path...
+                      {databaseCodebasePaths?.[db.name] && (
+                        <span className="ml-auto max-w-[100px] truncate text-[10px] text-muted-foreground">
+                          {databaseCodebasePaths[db.name]}
+                        </span>
+                      )}
+                    </ContextMenu.Item>
                   </>
                 )}
                 <ContextMenu.Separator className="my-1 h-px bg-border" />

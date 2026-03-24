@@ -114,10 +114,11 @@ function buildSystemPrompt(context: ChatContext): string {
 
   // Codebase context
   const activeConn = connections.find((c) => c.id === activeId)
-  if (activeConn?.codebasePath && context.database) {
+  const dbCodebasePath = activeConn?.databaseCodebasePaths?.[context.database!]
+  if (dbCodebasePath && context.database) {
     const searchTerms = [context.database]
     if (context.collection) searchTerms.push(context.collection)
-    const formatted = formatContext(scanCodebase(activeConn.codebasePath, searchTerms))
+    const formatted = formatContext(scanCodebase(dbCodebasePath, searchTerms))
     if (formatted) {
       lines.push('')
       lines.push(formatted)

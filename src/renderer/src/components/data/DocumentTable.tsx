@@ -295,6 +295,7 @@ export function DocumentTable() {
                     setSelectedDocIds(ids)
                   }}
                   singleClickEdit={false}
+                  enableCellTextSelection={true}
                   suppressContextMenu
                   getRowId={(params) => params.data._id ? String(params.data._id) : String(params.rowIndex)}
                 />

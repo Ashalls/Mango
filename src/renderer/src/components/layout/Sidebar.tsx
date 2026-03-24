@@ -177,6 +177,25 @@ export function Sidebar() {
                             isProduction={profile.isProduction}
                             claudeAccess={profile.claudeAccess}
                             claudeDbOverrides={profile.claudeDbOverrides}
+                            databaseCodebasePaths={profile.databaseCodebasePaths}
+                            onSetDbCodebasePath={async (dbName) => {
+                              const current = profile.databaseCodebasePaths?.[dbName] || ''
+                              const newPath = window.prompt(
+                                `Codebase path for database "${dbName}" (leave empty to clear):`,
+                                current
+                              )
+                              if (newPath === null) return // cancelled
+                              const paths = { ...(profile.databaseCodebasePaths || {}) }
+                              if (newPath.trim()) {
+                                paths[dbName] = newPath.trim()
+                              } else {
+                                delete paths[dbName]
+                              }
+                              await useConnectionStore.getState().saveProfile({
+                                ...profile,
+                                databaseCodebasePaths: paths
+                              })
+                            }}
                             onToggleDbClaude={async (dbName) => {
                               const defaultAccess = profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')
                               const overrides = { ...(profile.claudeDbOverrides || {}) }

@@ -454,6 +454,13 @@ export function QueryBuilder() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleRun()
                         }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const cellValue = e.dataTransfer.getData('text/cell-value')
+                          const text = cellValue || e.dataTransfer.getData('text/plain')
+                          if (text) updateRow(row.id, { value: text })
+                        }}
+                        onDragOver={(e) => e.preventDefault()}
                       />
                     )}
 
