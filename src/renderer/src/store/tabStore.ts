@@ -69,6 +69,8 @@ interface TabStore {
   setFilter: (filter: Record<string, unknown>) => void
   setPage: (page: number) => void
   setPageSize: (pageSize: number) => void
+  setSort: (sort: Record<string, number> | null) => void
+  setProjection: (projection: Record<string, number> | null) => void
   executeQuery: () => Promise<void>
 
   // Document actions
@@ -165,6 +167,18 @@ export const useTabStore = create<TabStore>((set, get) => ({
     if (!tab) return
     get().updateTab(tab.id, { pageSize, page: 0 })
     get().executeQuery()
+  },
+
+  setSort: (sort) => {
+    const tab = get().getActiveTab()
+    if (!tab) return
+    get().updateTab(tab.id, { sort, page: 0 })
+  },
+
+  setProjection: (projection) => {
+    const tab = get().getActiveTab()
+    if (!tab) return
+    get().updateTab(tab.id, { projection, page: 0 })
   },
 
   executeQuery: async () => {
