@@ -30,6 +30,7 @@ export interface Tab {
   // Claude state
   messages: ChatMessage[]
   isStreaming: boolean
+  chatSessionId: string
 }
 
 function createTab(connectionId: string, database: string, collection: string, isView: boolean = false): Tab {
@@ -53,7 +54,8 @@ function createTab(connectionId: string, database: string, collection: string, i
     isDirty: false,
     selectedDocIds: [],
     messages: [],
-    isStreaming: false
+    isStreaming: false,
+    chatSessionId: crypto.randomUUID()
   }
 }
 
@@ -88,6 +90,7 @@ interface TabStore {
   updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void
   setStreaming: (streaming: boolean) => void
   clearMessages: () => void
+  startNewChat: () => void
 
   // Internal
   updateTab: (tabId: string, updates: Partial<Tab>) => void
@@ -275,6 +278,26 @@ export const useTabStore = create<TabStore>((set, get) => ({
   clearMessages: () => {
     const tab = get().getActiveTab()
     if (tab) get().updateTab(tab.id, { messages: [], isStreaming: false })
+  },
+
+  startNewChat: () => {
+    const tab = get().getActiveTab()
+    if (!tab) return
+    // Save current session first if it has messages
+    if (tab.messages.length > 0) {
+      trpc.chatHistory.save
+        .mutate({
+          tabId: tab.id,
+          sessionId: tab.chatSessionId,
+          messages: tab.messages
+        })
+        .catch(() => {})
+    }
+    get().updateTab(tab.id, {
+      messages: [],
+      isStreaming: false,
+      chatSessionId: crypto.randomUUID()
+    })
   },
 
   // Persistence

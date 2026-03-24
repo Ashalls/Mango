@@ -8,6 +8,7 @@ import { migrationRouter } from './routers/migration'
 import { exportImportRouter } from './routers/exportImport'
 import { settingsRouter } from './routers/settings'
 import { claudeRouter } from './routers/claude'
+import { chatHistoryRouter } from './routers/chatHistory'
 
 export const appRouter = router({
   connection: connectionRouter,
@@ -18,7 +19,8 @@ export const appRouter = router({
   migration: migrationRouter,
   exportImport: exportImportRouter,
   settings: settingsRouter,
-  claude: claudeRouter
+  claude: claudeRouter,
+  chatHistory: chatHistoryRouter
 })
 
 export type AppRouter = typeof appRouter

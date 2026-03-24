@@ -11,9 +11,14 @@ import type { ChatMessage, ToolCallInfo } from '@shared/types'
 
 export function ClaudePanel() {
   const [input, setInput] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
+  const [sessions, setSessions] = useState<
+    { id: string; createdAt: number; updatedAt: number; preview: string; messageCount: number }[]
+  >([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
-  const { addMessage, updateMessage, setStreaming, clearMessages, executeQuery } = useTabStore()
+  const { addMessage, updateMessage, setStreaming, clearMessages, startNewChat, executeQuery } =
+    useTabStore()
 
   const profiles = useConnectionStore((s) => s.profiles)
   const activeConnection = useConnectionStore((s) => s.activeConnection)
@@ -88,6 +93,17 @@ export function ClaudePanel() {
       }
       // Refresh data
       store.executeQuery()
+      // Auto-save chat session
+      const currentTab = store.tabs.find((t) => t.id === store.activeTabId)
+      if (currentTab && currentTab.messages.length > 0) {
+        trpc.chatHistory.save
+          .mutate({
+            tabId: currentTab.id,
+            sessionId: currentTab.chatSessionId,
+            messages: currentTab.messages
+          })
+          .catch(() => {})
+      }
     }
 
     electron.ipcRenderer.on('claude:stream-start', handleStreamStart)
@@ -104,6 +120,30 @@ export function ClaudePanel() {
       electron.ipcRenderer.removeAllListeners('claude:stream-end')
     }
   }, [])
+
+  // Load most recent session when tab switches
+  useEffect(() => {
+    if (!tab) return
+    // If tab has no messages, try to load the most recent session
+    if (tab.messages.length === 0) {
+      trpc.chatHistory.list
+        .query({ tabId: tab.id })
+        .then((sessionList) => {
+          if (sessionList.length > 0) {
+            trpc.chatHistory.load.query({ sessionId: sessionList[0].id }).then((session) => {
+              if (session && session.messages.length > 0) {
+                const store = useTabStore.getState()
+                store.updateTab(tab.id, {
+                  messages: session.messages,
+                  chatSessionId: session.id
+                })
+              }
+            })
+          }
+        })
+        .catch(() => {})
+    }
+  }, [tab?.id])
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || isStreaming || !tab) return
@@ -168,10 +208,81 @@ export function ClaudePanel() {
             </span>
           )}
         </div>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearMessages} title="Clear chat">
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs"
+            onClick={async () => {
+              if (tab) {
+                const list = await trpc.chatHistory.list.query({ tabId: tab.id })
+                setSessions(list)
+                setShowHistory(!showHistory)
+              }
+            }}
+          >
+            History
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={startNewChat}>
+            New Chat
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={clearMessages}
+            title="Clear chat"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
+
+      {/* History dropdown */}
+      {showHistory && (
+        <div className="border-b border-border bg-muted/50 max-h-48 overflow-y-auto">
+          {sessions.length === 0 ? (
+            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+              No saved chats
+            </div>
+          ) : (
+            sessions.map((s) => (
+              <button
+                key={s.id}
+                className="flex w-full items-start gap-2 border-b border-border px-3 py-2 text-left hover:bg-accent/50"
+                onClick={async () => {
+                  const session = await trpc.chatHistory.load.query({ sessionId: s.id })
+                  if (session) {
+                    const store = useTabStore.getState()
+                    store.updateTab(tab!.id, {
+                      messages: session.messages,
+                      chatSessionId: session.id
+                    })
+                  }
+                  setShowHistory(false)
+                }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="truncate text-xs text-foreground">{s.preview}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {new Date(s.updatedAt).toLocaleDateString()} &middot; {s.messageCount} messages
+                  </div>
+                </div>
+                <button
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    await trpc.chatHistory.delete.mutate({ sessionId: s.id })
+                    setSessions((prev) => prev.filter((x) => x.id !== s.id))
+                  }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </button>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-3">
