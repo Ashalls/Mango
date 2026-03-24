@@ -205,7 +205,7 @@ export async function sendMessage(
         tools: [],
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        maxTurns: 10,
+        maxTurns: 30,
         persistSession: false
       }
     })
