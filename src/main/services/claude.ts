@@ -5,6 +5,7 @@ import { join } from 'path'
 import { DEFAULT_MCP_PORT } from '@shared/constants'
 import * as configService from './config'
 import * as mongoService from './mongodb'
+import { scanCodebase, formatContext } from './codebaseContext'
 
 /**
  * In packaged builds the SDK's cli.js is inside app.asar.unpacked so that
@@ -109,6 +110,18 @@ function buildSystemPrompt(context: ChatContext): string {
   }
   if (context.openDocumentId) {
     lines.push(`Open document: ${context.openDocumentId}`)
+  }
+
+  // Codebase context
+  const activeConn = connections.find((c) => c.id === activeId)
+  if (activeConn?.codebasePath && context.database) {
+    const searchTerms = [context.database]
+    if (context.collection) searchTerms.push(context.collection)
+    const formatted = formatContext(scanCodebase(activeConn.codebasePath, searchTerms))
+    if (formatted) {
+      lines.push('')
+      lines.push(formatted)
+    }
   }
 
   return lines.join('\n')
