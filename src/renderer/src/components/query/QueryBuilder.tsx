@@ -1,11 +1,8 @@
 import { useState, useMemo } from 'react'
 import {
-  Play,
   Plus,
   X,
   Code,
-  SlidersHorizontal,
-  Loader2,
   GripVertical,
   Eraser,
   ChevronDown,
@@ -13,6 +10,9 @@ import {
 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
+import { SortBuilder } from './SortBuilder'
+import { ProjectionBuilder } from './ProjectionBuilder'
+import { QueryFooter } from './QueryFooter'
 
 // --- Types ---
 
@@ -179,6 +179,8 @@ export function QueryBuilder() {
   const [rawMode, setRawMode] = useState(false)
   const [rawJson, setRawJson] = useState('{}')
   const [expanded, setExpanded] = useState(true)
+  const [sortExpanded, setSortExpanded] = useState(false)
+  const [projExpanded, setProjExpanded] = useState(false)
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { setFilter, setPage, executeQuery } = useTabStore()
   const loading = tab?.loading ?? false
@@ -262,7 +264,7 @@ export function QueryBuilder() {
     }
     setFilter(filter)
     setPage(0)
-    executeQuery(selectedDatabase, selectedCollection)
+    executeQuery()
   }
 
   const handleClear = () => {
@@ -292,12 +294,23 @@ export function QueryBuilder() {
 
   if (!tab) return null
 
+  // Compute summary texts for accordion headers
+  const sortSummary = tab?.sort
+    ? Object.entries(tab.sort)
+        .map(([k, v]) => `${k} ${v === 1 ? 'ASC' : 'DESC'}`)
+        .join(', ')
+    : 'None'
+
+  const projSummary = tab?.projection
+    ? `${Object.keys(tab.projection).length} fields`
+    : 'All fields'
+
   return (
     <div className="border-b border-border bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-1.5">
+      {/* FILTER section header */}
+      <div className="flex w-full items-center justify-between px-4 py-1.5">
         <button
-          className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1.5 text-xs font-medium"
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? (
@@ -305,8 +318,7 @@ export function QueryBuilder() {
           ) : (
             <ChevronRight className="h-3.5 w-3.5" />
           )}
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          Query
+          <span className="text-green-400">Filter</span>
           {rows.length > 0 && (
             <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">
               {rows.length}
@@ -322,17 +334,10 @@ export function QueryBuilder() {
             <Code className="mr-1 h-3.5 w-3.5" />
             {rawMode ? 'Visual' : 'JSON'}
           </Button>
-          <Button size="sm" className="h-7 text-xs" onClick={handleRun} disabled={loading}>
-            {loading ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="mr-1 h-3.5 w-3.5" />
-            )}
-            Run
-          </Button>
         </div>
       </div>
 
+      {/* FILTER section body */}
       {expanded && (
         <div className="px-4 pb-3">
           {rawMode ? (
@@ -497,6 +502,51 @@ export function QueryBuilder() {
           )}
         </div>
       )}
+
+      {/* SORT section header */}
+      <button
+        className="flex w-full items-center justify-between border-t border-border px-4 py-1.5"
+        onClick={() => setSortExpanded(!sortExpanded)}
+      >
+        <div className="flex items-center gap-1.5 text-xs font-medium">
+          {sortExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+          <span className="text-blue-400">Sort</span>
+        </div>
+        <span className="text-[10px] text-muted-foreground">{sortSummary}</span>
+      </button>
+
+      {/* SORT section body */}
+      {sortExpanded && (
+        <div className="px-4 pb-3">
+          <SortBuilder />
+        </div>
+      )}
+
+      {/* PROJECTION section header */}
+      <button
+        className="flex w-full items-center justify-between border-t border-border px-4 py-1.5"
+        onClick={() => setProjExpanded(!projExpanded)}
+      >
+        <div className="flex items-center gap-1.5 text-xs font-medium">
+          {projExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+          <span className="text-purple-400">Projection</span>
+        </div>
+        <span className="text-[10px] text-muted-foreground">{projSummary}</span>
+      </button>
+
+      {/* PROJECTION section body */}
+      {projExpanded && <ProjectionBuilder />}
+
+      {/* FOOTER — always visible */}
+      <QueryFooter onRun={handleRun} onToggleHistory={() => {}} loading={loading} />
     </div>
   )
 }
