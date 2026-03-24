@@ -15,7 +15,8 @@ export const connectionRouter = router({
         color: z.string().optional(),
         isProduction: z.boolean().optional(),
         claudeAccess: z.enum(['readonly', 'readwrite']).optional(),
-        claudeDbOverrides: z.record(z.enum(['readonly', 'readwrite'])).optional()
+        claudeDbOverrides: z.record(z.enum(['readonly', 'readwrite'])).optional(),
+        databaseCodebasePaths: z.record(z.string()).optional()
       })
     )
     .mutation(async ({ input }) => {
