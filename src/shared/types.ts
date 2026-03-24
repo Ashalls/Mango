@@ -8,6 +8,8 @@ export interface ConnectionProfile {
   claudeAccess?: 'readonly' | 'readwrite'
   /** Per-database Claude access overrides (key = database name) */
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
+  /** Root path to an associated codebase for Claude context */
+  codebasePath?: string
 }
 
 export interface ConnectionState {
