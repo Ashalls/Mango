@@ -363,6 +363,45 @@ export function registerTools(server: McpServer): void {
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
   })
 
+  server.registerTool('mongo_insert_many', {
+    description: 'Insert multiple documents. BLOCKED on readonly connections.',
+    inputSchema: {
+      database: z.string(),
+      collection: z.string(),
+      documents: z.array(z.record(z.unknown())).describe('Array of documents to insert')
+    }
+  }, async ({ database, collection, documents }) => {
+    const blocked = checkWriteAccess(database)
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const conn = getActiveConnectionInfo()
+    const result = await mutationActions.insertMany(database, collection, documents)
+    changelog.appendChangeLog({
+      source: 'claude', ...conn, database, collection,
+      operation: 'insert', count: result.insertedCount
+    })
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+  })
+
+  server.registerTool('mongo_update_many', {
+    description: 'Update all documents matching filter. BLOCKED on readonly connections.',
+    inputSchema: {
+      database: z.string(),
+      collection: z.string(),
+      filter: z.record(z.unknown()),
+      update: z.record(z.unknown())
+    }
+  }, async ({ database, collection, filter, update }) => {
+    const blocked = checkWriteAccess(database)
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const conn = getActiveConnectionInfo()
+    const result = await mutationActions.updateMany(database, collection, filter, update)
+    changelog.appendChangeLog({
+      source: 'claude', ...conn, database, collection,
+      operation: 'update', filter, changes: update, count: result.modifiedCount
+    })
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+  })
+
   // --- Change log tools ---
   server.registerTool('mongo_changelog', {
     description: 'View the change log of all mutations made by Claude. Use this to review or rollback changes.',
