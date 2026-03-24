@@ -6,7 +6,7 @@ import { DocumentTable } from './DocumentTable'
 import { BulkToolbar } from './BulkToolbar'
 import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
-import { ClaudePanel } from '@renderer/components/claude/ClaudePanel'
+import { MessageSquare } from 'lucide-react'
 
 export function MainPanel() {
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
@@ -23,8 +23,9 @@ export function MainPanel() {
       {activeTab ? (
         <>
           {activeTab.scope !== 'collection' ? (
-            <div className="flex-1 overflow-hidden">
-              <ClaudePanel />
+            <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-3">
+              <MessageSquare className="h-10 w-10 opacity-30" />
+              <p className="text-sm">Chat with Claude in the side panel &rarr;</p>
             </div>
           ) : (
             <>

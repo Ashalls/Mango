@@ -351,10 +351,21 @@ export function ClaudePanel() {
           <div className="space-y-3">
             {messages.map((msg) => (
               <div key={msg.id}>
-                <MessageBubble message={msg} />
-                {msg.toolCalls?.map((tc) => (
-                  <ToolCallCard key={tc.id} toolCall={tc} />
-                ))}
+                {msg.role === 'assistant' && msg.toolCalls?.length ? (
+                  <>
+                    {msg.toolCalls.map((tc) => (
+                      <ToolCallCard key={tc.id} toolCall={tc} />
+                    ))}
+                    <MessageBubble message={msg} />
+                  </>
+                ) : (
+                  <>
+                    <MessageBubble message={msg} />
+                    {msg.toolCalls?.map((tc) => (
+                      <ToolCallCard key={tc.id} toolCall={tc} />
+                    ))}
+                  </>
+                )}
               </div>
             ))}
             {isStreaming && (
