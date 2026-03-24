@@ -11,13 +11,15 @@ files:
 publish:
   provider: github
   owner: Ashalls
-  repo: MongoLens
+  repo: Mango
 win:
   executableName: Mango
   target:
     - nsis
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: Mango-${version}-setup.${ext}
   shortcutName: Mango
   uninstallDisplayName: Mango
 mac:
