@@ -117,6 +117,31 @@ function parseEditValue(newValue: string, oldValue: unknown): unknown {
   return newValue
 }
 
+function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
+  const text = props.value === null || props.value === undefined
+    ? ''
+    : typeof props.value === 'object'
+      ? JSON.stringify(props.value)
+      : String(props.value)
+  const field = props.colDef?.field || ''
+
+  return (
+    <span
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', text)
+        e.dataTransfer.setData('text/cell-value', text)
+        e.dataTransfer.setData('text/field-name', field)
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+      className="cursor-grab active:cursor-grabbing"
+      title={`Drag to filter: ${text.slice(0, 50)}`}
+    >
+      {text}
+    </span>
+  )
+}
+
 export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
@@ -182,7 +207,8 @@ export function DocumentTable() {
               if (!params.colDef.field) return false
               params.data[params.colDef.field] = parseEditValue(params.newValue, params.oldValue)
               return true
-            }
+            },
+            cellRenderer: DraggableCell
           }
         })
       })()

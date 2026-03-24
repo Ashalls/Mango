@@ -16,5 +16,20 @@ export const settingsRouter = router({
       settings[input.key] = input.value
       configService.saveSettings(settings)
       return { ok: true }
+    }),
+
+  pickFolder: procedure
+    .input(z.object({ title: z.string().optional(), defaultPath: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const { dialog, BrowserWindow } = await import('electron')
+      const win = BrowserWindow.getFocusedWindow()
+      if (!win) return { canceled: true, path: null }
+      const { filePaths, canceled } = await dialog.showOpenDialog(win, {
+        title: input.title || 'Select Folder',
+        defaultPath: input.defaultPath || undefined,
+        properties: ['openDirectory']
+      })
+      if (canceled || filePaths.length === 0) return { canceled: true, path: null }
+      return { canceled: false, path: filePaths[0] }
     })
 })

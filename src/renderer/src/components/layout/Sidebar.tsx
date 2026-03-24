@@ -180,14 +180,14 @@ export function Sidebar() {
                             databaseCodebasePaths={profile.databaseCodebasePaths}
                             onSetDbCodebasePath={async (dbName) => {
                               const current = profile.databaseCodebasePaths?.[dbName] || ''
-                              const newPath = window.prompt(
-                                `Codebase path for database "${dbName}" (leave empty to clear):`,
-                                current
-                              )
-                              if (newPath === null) return // cancelled
+                              const result = await trpc.settings.pickFolder.mutate({
+                                title: `Select codebase folder for "${dbName}"`,
+                                defaultPath: current || undefined
+                              })
+                              if (result.canceled) return
                               const paths = { ...(profile.databaseCodebasePaths || {}) }
-                              if (newPath.trim()) {
-                                paths[dbName] = newPath.trim()
+                              if (result.path) {
+                                paths[dbName] = result.path
                               } else {
                                 delete paths[dbName]
                               }
