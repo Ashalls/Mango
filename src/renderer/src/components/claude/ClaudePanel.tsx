@@ -65,12 +65,26 @@ export function ClaudePanel() {
       const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
       const msg = activeTab?.messages.find((m) => m.id === data.messageId)
       if (msg?.toolCalls) {
+        const toolCall = msg.toolCalls.find((tc) => tc.id === data.toolUseId)
         const updatedCalls = msg.toolCalls.map((tc) =>
           tc.id === data.toolUseId
             ? { ...tc, result: data.result, status: data.status as ToolCallInfo['status'] }
             : tc
         )
         store.updateMessage(data.messageId, { toolCalls: updatedCalls })
+
+        // Push mongo_find results directly to the document table
+        if (activeTab && toolCall?.name?.includes('find') && data.result) {
+          try {
+            const parsed = JSON.parse(data.result)
+            if (parsed.documents && Array.isArray(parsed.documents)) {
+              store.updateTab(activeTab.id, {
+                results: { documents: parsed.documents, totalCount: parsed.totalCount ?? parsed.documents.length },
+                loading: false
+              })
+            }
+          } catch { /* not valid JSON, ignore */ }
+        }
       }
     }
 
