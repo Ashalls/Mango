@@ -9,10 +9,11 @@ import * as mongoService from '../services/mongodb'
 import * as changelog from '../services/changelog'
 
 /**
- * Check if the active connection allows Claude to write.
+ * Check if the active connection allows Claude to write to a specific database.
+ * Checks: connection-level default → per-database override.
  * Returns an error message if blocked, null if allowed.
  */
-function checkWriteAccess(): string | null {
+function checkWriteAccess(database?: string): string | null {
   const activeId = mongoService.getActiveConnectionId()
   if (!activeId) return 'No active connection'
 
@@ -20,12 +21,14 @@ function checkWriteAccess(): string | null {
   const profile = connections.find((c) => c.id === activeId)
   if (!profile) return 'Connection profile not found'
 
-  if (profile.isProduction && profile.claudeAccess !== 'readwrite') {
-    return `BLOCKED: "${profile.name}" is a production database with Claude access set to "${profile.claudeAccess || 'readonly'}". Mutations are not allowed. Tell the user to change Claude access to "readwrite" in the connection settings if they want to allow this.`
-  }
+  // Determine effective access: per-database override takes priority over connection default
+  const connectionDefault = profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')
+  const effectiveAccess = (database && profile.claudeDbOverrides?.[database]) || connectionDefault
 
-  if (profile.claudeAccess === 'readonly') {
-    return `BLOCKED: "${profile.name}" has Claude access set to "readonly". Mutations are not allowed. Tell the user to change this in connection settings if they want to allow writes.`
+  if (effectiveAccess === 'readonly') {
+    const overridden = database && profile.claudeDbOverrides?.[database]
+    const source = overridden ? `database "${database}"` : `connection "${profile.name}"`
+    return `BLOCKED: ${source} has Claude access set to "readonly". Mutations are not allowed. The user can change this by right-clicking the ${overridden ? 'database' : 'connection'} and toggling Claude access.`
   }
 
   return null
@@ -220,7 +223,7 @@ export function registerTools(server: McpServer): void {
       document: z.record(z.unknown())
     }
   }, async ({ database, collection, document }) => {
-    const blocked = checkWriteAccess()
+    const blocked = checkWriteAccess(database)
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
     const conn = getActiveConnectionInfo()
     const result = await mutationActions.insertOne(database, collection, document)
@@ -240,7 +243,7 @@ export function registerTools(server: McpServer): void {
       update: z.record(z.unknown())
     }
   }, async ({ database, collection, filter, update }) => {
-    const blocked = checkWriteAccess()
+    const blocked = checkWriteAccess(database)
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
     const conn = getActiveConnectionInfo()
     // Capture document before update for rollback
@@ -263,7 +266,7 @@ export function registerTools(server: McpServer): void {
       filter: z.record(z.unknown())
     }
   }, async ({ database, collection, filter }) => {
-    const blocked = checkWriteAccess()
+    const blocked = checkWriteAccess(database)
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
     const conn = getActiveConnectionInfo()
     // Capture document before delete for rollback
@@ -286,7 +289,7 @@ export function registerTools(server: McpServer): void {
       filter: z.record(z.unknown())
     }
   }, async ({ database, collection, filter }) => {
-    const blocked = checkWriteAccess()
+    const blocked = checkWriteAccess(database)
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
     const conn = getActiveConnectionInfo()
     const result = await mutationActions.deleteMany(database, collection, filter)
@@ -315,7 +318,7 @@ export function registerTools(server: McpServer): void {
       changeId: z.string().describe('The change log entry ID to rollback')
     }
   }, async ({ changeId }) => {
-    const blocked = checkWriteAccess()
+    const blocked = checkWriteAccess(database)
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
 
     const entries = changelog.loadChangeLog()

@@ -6,6 +6,7 @@ import { mutationRouter } from './routers/mutation'
 import { adminRouter } from './routers/admin'
 import { migrationRouter } from './routers/migration'
 import { exportImportRouter } from './routers/exportImport'
+import { settingsRouter } from './routers/settings'
 import { claudeRouter } from './routers/claude'
 
 export const appRouter = router({
@@ -16,6 +17,7 @@ export const appRouter = router({
   admin: adminRouter,
   migration: migrationRouter,
   exportImport: exportImportRouter,
+  settings: settingsRouter,
   claude: claudeRouter
 })
 

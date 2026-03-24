@@ -22,7 +22,7 @@ import { trpc } from '@renderer/lib/trpc'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
-// Custom header with type badge + draggable
+// Custom header: name on top, type dot + abbreviation below. Draggable.
 function TypedHeader(props: { displayName: string; type?: string; typeColor?: string }) {
   const fieldName = props.displayName
   const type = props.type || ''
@@ -30,21 +30,21 @@ function TypedHeader(props: { displayName: string; type?: string; typeColor?: st
 
   return (
     <div
-      className="flex w-full items-center gap-1.5 cursor-grab"
+      className="flex items-center gap-1 w-full cursor-grab overflow-hidden"
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/field-name', fieldName)
         e.dataTransfer.setData('text/plain', fieldName)
       }}
+      title={`${fieldName} (${type})`}
     >
-      <span className="truncate">{fieldName}</span>
+      <span className="truncate font-medium">{fieldName}</span>
       {type && (
         <span
-          className="shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-none"
-          style={{ backgroundColor: color + '25', color }}
-        >
-          {type}
-        </span>
+          className="shrink-0 inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: color }}
+          title={type}
+        />
       )}
     </div>
   )
@@ -120,6 +120,10 @@ function parseEditValue(newValue: string, oldValue: unknown): unknown {
 export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery } = useTabStore()
+  const themeMode = useThemeStore((s) => s.theme)
+  const effectiveTheme = themeMode === 'system'
+    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : themeMode
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [contextDoc, setContextDoc] = useState<Record<string, unknown> | null>(null)
   const [contextCell, setContextCell] = useState<{ field: string; value: unknown } | null>(null)
@@ -164,8 +168,10 @@ export function DocumentTable() {
             sortable: true,
             filter: true,
             editable: key !== '_id' && !tab.isView,
-            flex: key === '_id' ? 0 : 1,
+            minWidth: key === '_id' ? 180 : 120,
             width: key === '_id' ? 220 : undefined,
+            flex: key === '_id' ? 0 : 1,
+            suppressSizeToFit: key === '_id',
             valueFormatter: (params: { value: unknown }) => {
               const val = params.value
               if (val === null || val === undefined) return ''
@@ -274,7 +280,7 @@ export function DocumentTable() {
               <div className="h-full">
                 <AgGridReact
                   ref={gridRef}
-                  theme={useThemeStore.getState().getEffectiveTheme() === 'dark' ? gridDarkTheme : gridLightTheme}
+                  theme={effectiveTheme === 'dark' ? gridDarkTheme : gridLightTheme}
                   rowData={documents}
                   columnDefs={columnDefs}
                   onRowClicked={(e) => selectDocument(e.data)}

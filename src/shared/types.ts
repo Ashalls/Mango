@@ -4,8 +4,10 @@ export interface ConnectionProfile {
   uri: string
   color?: string
   isProduction?: boolean
-  /** Controls what Claude can do on this connection */
+  /** Default Claude access for all databases on this connection */
   claudeAccess?: 'readonly' | 'readwrite'
+  /** Per-database Claude access overrides (key = database name) */
+  claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
 }
 
 export interface ConnectionState {

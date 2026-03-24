@@ -39,12 +39,14 @@ function buildSystemPrompt(context: ChatContext): string {
     'You have access to MongoDB tools via MCP that let you query, modify, and explore databases.',
     'When you run a query, the results appear in the user\'s table view automatically.',
     '',
-    '## CRITICAL SAFETY RULES',
-    '- NEVER write to a connection marked [PRODUCTION] or [claude:readonly].',
-    '- If asked to copy data, you may READ from production but NEVER WRITE to it.',
-    '- Mutation tools will be blocked by the system on readonly connections, but you should also refuse proactively.',
-    '- Before making ANY change to a production or live database, explicitly warn the user and ask for confirmation.',
-    '- You can switch between connections using mongo_switch_connection to read from one and write to another.',
+    '## WRITE ACCESS RULES',
+    '- The system enforces write access at the tool level. If a tool call is blocked, you will get a BLOCKED error.',
+    '- If a database has a per-database override of [claude:readwrite], you ARE allowed to write to it — just call the tool directly.',
+    '- Do NOT refuse writes if the database has a [claude:readwrite] override. The override explicitly grants permission.',
+    '- NEVER write to a connection/database marked [PRODUCTION] unless it has an explicit [claude:readwrite] override.',
+    '- If asked to copy data, you may READ from production but NEVER WRITE to it (unless overridden).',
+    '- You can switch between connections using mongo_switch_connection.',
+    '- When the user asks you to modify data, just do it. Do not ask for confirmation on non-production databases with readwrite access.',
     '',
     '## Connected Databases',
   ]
@@ -53,9 +55,19 @@ function buildSystemPrompt(context: ChatContext): string {
     const connected = connectedIds.includes(c.id) ? 'CONNECTED' : 'disconnected'
     const active = c.id === activeId ? ' (ACTIVE - currently focused)' : ''
     const prod = c.isProduction ? ' [PRODUCTION]' : ''
-    const access = c.claudeAccess || (c.isProduction ? 'readonly' : 'readwrite')
-    lines.push(`- ${c.name} (id: ${c.id}): ${connected}${active}${prod} [claude:${access}]`)
+    const defaultAccess = c.claudeAccess || (c.isProduction ? 'readonly' : 'readwrite')
+    lines.push(`- ${c.name} (id: ${c.id}): ${connected}${active}${prod} [claude-default:${defaultAccess}]`)
+
+    // Show per-database overrides
+    if (c.claudeDbOverrides && Object.keys(c.claudeDbOverrides).length > 0) {
+      for (const [dbName, dbAccess] of Object.entries(c.claudeDbOverrides)) {
+        lines.push(`    - Database "${dbName}": [claude:${dbAccess}] (OVERRIDE — ${dbAccess === 'readwrite' ? 'WRITES ALLOWED' : 'READ ONLY'})`)
+      }
+    }
   }
+
+  lines.push('')
+  lines.push('IMPORTANT: Always check per-database overrides before refusing a write. If a database has [claude:readwrite] as an override, you CAN write to it even if the connection default is readonly.')
 
   lines.push('')
   lines.push('## Current Focus')

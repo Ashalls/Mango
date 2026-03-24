@@ -6,6 +6,7 @@ import { Input } from '@renderer/components/ui/input'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { DatabaseTree } from '@renderer/components/explorer/DatabaseTree'
 import { ConnectionDialog } from '@renderer/components/explorer/ConnectionDialog'
+import { InputDialog } from '@renderer/components/ui/input-dialog'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useExplorerStore } from '@renderer/store/explorerStore'
 import { trpc } from '@renderer/lib/trpc'
@@ -14,6 +15,7 @@ import type { ConnectionProfile } from '@shared/types'
 export function Sidebar() {
   const [showConnectionDialog, setShowConnectionDialog] = useState(false)
   const [editProfile, setEditProfile] = useState<ConnectionProfile | null>(null)
+  const [showCreateDb, setShowCreateDb] = useState<string | null>(null) // connection ID
   const [search, setSearch] = useState('')
   const [clipboard, setClipboard] = useState<{
     connectionId: string
@@ -154,6 +156,9 @@ export function Sidebar() {
                           style={{ backgroundColor: profile.color || '#6b7280' }}
                         />
                         <span className="flex-1 truncate">{profile.name}</span>
+                        {(profile.claudeAccess === 'readwrite' || (!profile.claudeAccess && !profile.isProduction)) && isThisConnected && (
+                          <Bot className="h-3 w-3 text-red-400" title="Claude: readwrite" />
+                        )}
                         {profile.isProduction && (
                           <ShieldAlert className="h-3.5 w-3.5 text-red-400" title="Production" />
                         )}
@@ -170,6 +175,23 @@ export function Sidebar() {
                             canPaste={clipboard !== null && clipboard.connectionId !== profile.id}
                             onPasteDatabase={() => handlePasteDatabase(profile.id)}
                             isProduction={profile.isProduction}
+                            claudeAccess={profile.claudeAccess}
+                            claudeDbOverrides={profile.claudeDbOverrides}
+                            onToggleDbClaude={async (dbName) => {
+                              const defaultAccess = profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')
+                              const overrides = { ...(profile.claudeDbOverrides || {}) }
+                              const current = overrides[dbName] || defaultAccess
+                              const next = current === 'readonly' ? 'readwrite' : 'readonly'
+                              if (next === defaultAccess) {
+                                delete overrides[dbName] // Remove override, inherit from connection
+                              } else {
+                                overrides[dbName] = next
+                              }
+                              await useConnectionStore.getState().saveProfile({
+                                ...profile,
+                                claudeDbOverrides: overrides
+                              })
+                            }}
                           />
                         </div>
                       )}
@@ -197,18 +219,7 @@ export function Sidebar() {
                       {isThisConnected && !profile.isProduction && (
                         <ContextMenu.Item
                           className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
-                          onSelect={async () => {
-                            const dbName = prompt('New database name:')
-                            if (!dbName) return
-                            const colName = prompt('Initial collection name:', 'default')
-                            if (!colName) return
-                            try {
-                              await trpc.admin.createCollection.mutate({ database: dbName, collection: colName })
-                              loadDatabases()
-                            } catch (err) {
-                              alert(`Failed: ${err instanceof Error ? err.message : err}`)
-                            }
-                          }}
+                          onSelect={() => setShowCreateDb(profile.id)}
                         >
                           <Database className="h-3.5 w-3.5" />
                           Create Database
@@ -285,6 +296,30 @@ export function Sidebar() {
             setEditProfile(null)
           }}
           editProfile={editProfile || undefined}
+        />
+      )}
+
+      {showCreateDb && (
+        <InputDialog
+          title="Create Database"
+          fields={[
+            { key: 'database', label: 'Database Name', placeholder: 'my_database' },
+            { key: 'collection', label: 'Initial Collection', placeholder: 'default', defaultValue: 'default' }
+          ]}
+          submitLabel="Create"
+          onCancel={() => setShowCreateDb(null)}
+          onSubmit={async (values) => {
+            try {
+              await trpc.admin.createCollection.mutate({
+                database: values.database,
+                collection: values.collection
+              })
+              setShowCreateDb(null)
+              loadDatabases()
+            } catch (err) {
+              alert(`Failed: ${err instanceof Error ? err.message : err}`)
+            }
+          }}
         />
       )}
     </div>

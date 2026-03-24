@@ -123,3 +123,8 @@ select option {
   background-color: var(--popover);
   color: var(--foreground);
 }
+
+/* Context menus need high z-index to appear above AG Grid and other content */
+[data-radix-popper-content-wrapper] {
+  z-index: 9999 !important;
+}

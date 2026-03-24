@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -15,9 +15,12 @@ interface DatabaseTreeProps {
   canPaste?: boolean
   onPasteDatabase?: () => void
   isProduction?: boolean
+  claudeAccess?: 'readonly' | 'readwrite'
+  claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
+  onToggleDbClaude?: (dbName: string) => void
 }
 
-export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction }: DatabaseTreeProps) {
+export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude }: DatabaseTreeProps) {
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set())
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
@@ -128,6 +131,18 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 )}
                 <Database className="h-3.5 w-3.5 text-amber-400" />
                 <span className="truncate">{db.name}</span>
+                {(() => {
+                  const dbOverride = claudeDbOverrides?.[db.name]
+                  if (!dbOverride) return null
+                  const defaultAccess = claudeAccess || (isProduction ? 'readonly' : 'readwrite')
+                  if (dbOverride === defaultAccess) return null
+                  return (
+                    <Bot
+                      className={`ml-auto h-3 w-3 shrink-0 ${dbOverride === 'readwrite' ? 'text-red-400' : 'text-amber-400'}`}
+                      title={`Claude: ${dbOverride} (override)`}
+                    />
+                  )
+                })()}
               </button>
             </ContextMenu.Trigger>
             <ContextMenu.Portal>
@@ -159,6 +174,28 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                     <ClipboardPaste className="h-3.5 w-3.5" />
                     Paste Database Here
                   </ContextMenu.Item>
+                )}
+                {onToggleDbClaude && (
+                  <>
+                    <ContextMenu.Separator className="my-1 h-px bg-border" />
+                    {(() => {
+                      const defaultAccess = claudeAccess || (isProduction ? 'readonly' : 'readwrite')
+                      const dbAccess = claudeDbOverrides?.[db.name] || defaultAccess
+                      const isReadOnly = dbAccess === 'readonly'
+                      return (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => onToggleDbClaude(db.name)}
+                        >
+                          <Bot className={`h-3.5 w-3.5 ${isReadOnly ? 'text-blue-400' : 'text-amber-400'}`} />
+                          Claude: {isReadOnly ? 'Enable Write' : 'Set Read-Only'}
+                          <span className="ml-auto text-[10px] text-muted-foreground">
+                            {dbAccess === (claudeAccess || (isProduction ? 'readonly' : 'readwrite')) ? '(inherited)' : '(override)'}
+                          </span>
+                        </ContextMenu.Item>
+                      )
+                    })()}
+                  </>
                 )}
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
                 <ContextMenu.Item
