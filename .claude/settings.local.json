@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash \"C:\\\\Users\\\\devel\\\\.claude\\\\plugins\\\\cache\\\\claude-plugins-official\\\\superpowers\\\\5.0.5\\\\skills\\\\brainstorming\\\\scripts\\\\start-server.sh\" --project-dir \"D:\\\\Git Repos\\\\MongoLens\")",
+      "WebSearch",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "WebFetch(domain:www.npmjs.com)",
+      "mcp__plugin_context7_context7__query-docs",
+      "WebFetch(domain:electron-vite.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ts.sdk.modelcontextprotocol.io)",
+      "WebFetch(domain:electron-trpc.dev)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Read(//d/Git Repos/**)",
+      "Bash(pnpm create:*)",
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npm install:*)",
+      "Bash(pnpm --version)",
+      "Bash(rm -rf \"D:/Git Repos/mongolens-temp\")",
+      "Bash(mkdir -p src/main src/preload src/renderer/src/styles src/shared resources)",
+      "Bash(pnpm install:*)",
+      "Bash(npm view:*)",
+      "Bash(npx electron-vite:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(node:*)",
+      "Bash(npx electron:*)",
+      "Bash(node -e \"console.log\\(require\\(''electron''\\)\\)\")",
+      "Bash(npx electron-rebuild:*)",
+      "Bash(grep -r \"serialize\" \"D:/Git Repos/MongoLens/node_modules/.pnpm/electron-trpc@1.0.0-alpha.0\"*/node_modules/electron-trpc/src/renderer/ipcLink.ts)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(curl -s http://localhost:5173/src/main.tsx)",
+      "Bash(curl -v http://localhost:5173/)"
+    ]
+  }
+}

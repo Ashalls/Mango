@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import { createIPCHandler } from 'electron-trpc/main'
 import { appRouter } from './trpc/router'
 import * as mongoService from './services/mongodb'
@@ -29,7 +30,6 @@ function createSplashWindow(): BrowserWindow {
   })
 
   splash.loadFile(join(__dirname, '../../resources/splash.html'))
-
   splash.center()
   splash.show()
 
@@ -45,7 +45,7 @@ function createWindow(): BrowserWindow {
     minWidth: 1000,
     minHeight: 600,
     show: false,
-    title: 'MongoLens',
+    title: 'Mango',
     icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -70,7 +70,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.mongolens.app')
+  electronApp.setAppUserModelId('com.mango.app')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -78,11 +78,40 @@ app.whenReady().then(async () => {
 
   // Show splash
   const splash = createSplashWindow()
+  const splashStart = Date.now()
+
+  // Check for updates during splash (production only)
+  if (!is.dev) {
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.on('update-available', () => {
+      splash.webContents.executeJavaScript(
+        'document.getElementById("status").innerHTML = "Downloading update<span class=\\"dot\\">.</span><span class=\\"dot\\">.</span><span class=\\"dot\\">.</span>"'
+      )
+    })
+    autoUpdater.on('update-downloaded', () => {
+      splash.webContents.executeJavaScript(
+        'document.getElementById("status").innerText = "Update ready — restarting..."'
+      )
+      setTimeout(() => autoUpdater.quitAndInstall(), 1500)
+    })
+    autoUpdater.on('update-not-available', () => {
+      splash.webContents.executeJavaScript(
+        'document.getElementById("status").innerText = "Up to date!"'
+      )
+    })
+    autoUpdater.on('error', () => {
+      splash.webContents.executeJavaScript(
+        'document.getElementById("status").innerText = "Starting..."'
+      )
+    })
+    autoUpdater.checkForUpdates().catch(() => {})
+  }
 
   // Start MCP server while splash is showing
   try {
     mcpPort = await startMcpServer()
-    console.log(`MongoLens MCP server running on port ${mcpPort}`)
+    console.log(`Mango MCP server running on port ${mcpPort}`)
   } catch (err) {
     console.error('Failed to start MCP server:', err)
   }
@@ -94,9 +123,7 @@ app.whenReady().then(async () => {
 
   // Wait for main window to be ready, then swap
   mainWindow.once('ready-to-show', () => {
-    // Keep splash visible for at least 3 seconds
     const splashMinTime = 3000
-    const splashStart = Date.now()
     const remaining = Math.max(0, splashMinTime - (Date.now() - splashStart))
 
     setTimeout(() => {

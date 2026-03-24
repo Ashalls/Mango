@@ -6,6 +6,7 @@ import * as queryActions from '../actions/query'
 import * as mutationActions from '../actions/mutation'
 import * as configService from '../services/config'
 import * as mongoService from '../services/mongodb'
+import * as changelog from '../services/changelog'
 
 /**
  * Check if the active connection allows Claude to write.
@@ -203,6 +204,14 @@ export function registerTools(server: McpServer): void {
   })
 
   // --- Mutation tools (with write access checks) ---
+  // Helper to get connection info for logging
+  function getActiveConnectionInfo() {
+    const activeId = mongoService.getActiveConnectionId()
+    const connections = configService.loadConnections()
+    const profile = connections.find((c) => c.id === activeId)
+    return { connectionId: activeId || '', connectionName: profile?.name || '' }
+  }
+
   server.registerTool('mongo_insert_one', {
     description: 'Insert a single document. BLOCKED on readonly/production connections.',
     inputSchema: {
@@ -213,7 +222,12 @@ export function registerTools(server: McpServer): void {
   }, async ({ database, collection, document }) => {
     const blocked = checkWriteAccess()
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const conn = getActiveConnectionInfo()
     const result = await mutationActions.insertOne(database, collection, document)
+    changelog.appendChangeLog({
+      source: 'claude', ...conn, database, collection,
+      operation: 'insert', changes: document, count: 1
+    })
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
   })
 
@@ -228,7 +242,16 @@ export function registerTools(server: McpServer): void {
   }, async ({ database, collection, filter, update }) => {
     const blocked = checkWriteAccess()
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const conn = getActiveConnectionInfo()
+    // Capture document before update for rollback
+    const before = await queryActions.find({ database, collection, filter, limit: 1 })
     const result = await mutationActions.updateOne(database, collection, filter, update)
+    changelog.appendChangeLog({
+      source: 'claude', ...conn, database, collection,
+      operation: 'update', filter, changes: update,
+      documentsBefore: before.documents.slice(0, 1),
+      count: result.modifiedCount
+    })
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
   })
 
@@ -242,7 +265,16 @@ export function registerTools(server: McpServer): void {
   }, async ({ database, collection, filter }) => {
     const blocked = checkWriteAccess()
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const conn = getActiveConnectionInfo()
+    // Capture document before delete for rollback
+    const before = await queryActions.find({ database, collection, filter, limit: 1 })
     const result = await mutationActions.deleteOne(database, collection, filter)
+    changelog.appendChangeLog({
+      source: 'claude', ...conn, database, collection,
+      operation: 'delete', filter,
+      documentsBefore: before.documents.slice(0, 1),
+      count: result.deletedCount
+    })
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
   })
 
@@ -256,7 +288,60 @@ export function registerTools(server: McpServer): void {
   }, async ({ database, collection, filter }) => {
     const blocked = checkWriteAccess()
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const conn = getActiveConnectionInfo()
     const result = await mutationActions.deleteMany(database, collection, filter)
+    changelog.appendChangeLog({
+      source: 'claude', ...conn, database, collection,
+      operation: 'delete', filter, count: result.deletedCount
+    })
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+  })
+
+  // --- Change log tools ---
+  server.registerTool('mongo_changelog', {
+    description: 'View the change log of all mutations made by Claude. Use this to review or rollback changes.',
+    inputSchema: {
+      limit: z.number().optional().default(20)
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ limit }) => {
+    const entries = changelog.getRecentChanges(limit)
+    return { content: [{ type: 'text', text: JSON.stringify(entries, null, 2) }] }
+  })
+
+  server.registerTool('mongo_rollback', {
+    description: 'Rollback a specific change by ID. Re-inserts deleted documents or reverts updates.',
+    inputSchema: {
+      changeId: z.string().describe('The change log entry ID to rollback')
+    }
+  }, async ({ changeId }) => {
+    const blocked = checkWriteAccess()
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+
+    const entries = changelog.loadChangeLog()
+    const entry = entries.find((e) => e.id === changeId)
+    if (!entry) return { content: [{ type: 'text', text: 'Change not found' }], isError: true }
+    if (entry.rolledBack) return { content: [{ type: 'text', text: 'Already rolled back' }], isError: true }
+
+    if (entry.operation === 'delete' && entry.documentsBefore?.length) {
+      for (const doc of entry.documentsBefore) {
+        await mutationActions.insertOne(entry.database, entry.collection, doc)
+      }
+      changelog.markRolledBack(changeId)
+      return { content: [{ type: 'text', text: `Rolled back: re-inserted ${entry.documentsBefore.length} document(s)` }] }
+    }
+
+    if (entry.operation === 'update' && entry.documentsBefore?.length) {
+      for (const doc of entry.documentsBefore) {
+        const { _id, ...fields } = doc
+        if (_id) {
+          await mutationActions.updateOne(entry.database, entry.collection, { _id }, { $set: fields })
+        }
+      }
+      changelog.markRolledBack(changeId)
+      return { content: [{ type: 'text', text: `Rolled back: reverted ${entry.documentsBefore.length} document(s) to previous state` }] }
+    }
+
+    return { content: [{ type: 'text', text: 'Cannot rollback this operation type (no before-state captured)' }], isError: true }
   })
 }

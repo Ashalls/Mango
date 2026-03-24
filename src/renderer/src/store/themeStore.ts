@@ -8,7 +8,7 @@ interface ThemeStore {
   getEffectiveTheme: () => 'light' | 'dark'
 }
 
-const THEME_KEY = 'mongolens:theme'
+const THEME_KEY = 'mango:theme'
 
 function applyTheme(theme: Theme): void {
   const effective = theme === 'system'

@@ -90,7 +90,7 @@ interface TabStore {
   loadTabs: () => void
 }
 
-const TABS_STORAGE_KEY = 'mongolens:openTabs'
+const TABS_STORAGE_KEY = 'mango:openTabs'
 
 export const useTabStore = create<TabStore>((set, get) => ({
   tabs: [],

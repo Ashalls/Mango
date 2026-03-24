@@ -35,7 +35,7 @@ function buildSystemPrompt(context: ChatContext): string {
   const activeId = mongoService.getActiveConnectionId()
 
   const lines = [
-    'You are an assistant embedded in MongoLens, a MongoDB client application.',
+    'You are an assistant embedded in Mango, a MongoDB client application.',
     'You have access to MongoDB tools via MCP that let you query, modify, and explore databases.',
     'When you run a query, the results appear in the user\'s table view automatically.',
     '',
@@ -106,27 +106,27 @@ export async function sendMessage(
         model: 'claude-sonnet-4-5-20250929',
         abortController: activeAbortController,
         mcpServers: {
-          mongolens: {
+          mango: {
             type: 'http',
             url: `http://127.0.0.1:${mcpPort}/mcp`
           }
         },
         allowedTools: [
-          'mcp__mongolens__mongo_list_connections',
-          'mcp__mongolens__mongo_connect',
-          'mcp__mongolens__mongo_connection_status',
-          'mcp__mongolens__mongo_list_databases',
-          'mcp__mongolens__mongo_list_collections',
-          'mcp__mongolens__mongo_collection_schema',
-          'mcp__mongolens__mongo_find',
-          'mcp__mongolens__mongo_count',
-          'mcp__mongolens__mongo_aggregate',
-          'mcp__mongolens__mongo_distinct',
-          'mcp__mongolens__mongo_explain',
-          'mcp__mongolens__mongo_insert_one',
-          'mcp__mongolens__mongo_update_one',
-          'mcp__mongolens__mongo_delete_one',
-          'mcp__mongolens__mongo_delete_many'
+          'mcp__mango__mongo_list_connections',
+          'mcp__mango__mongo_connect',
+          'mcp__mango__mongo_connection_status',
+          'mcp__mango__mongo_list_databases',
+          'mcp__mango__mongo_list_collections',
+          'mcp__mango__mongo_collection_schema',
+          'mcp__mango__mongo_find',
+          'mcp__mango__mongo_count',
+          'mcp__mango__mongo_aggregate',
+          'mcp__mango__mongo_distinct',
+          'mcp__mango__mongo_explain',
+          'mcp__mango__mongo_insert_one',
+          'mcp__mango__mongo_update_one',
+          'mcp__mango__mongo_delete_one',
+          'mcp__mango__mongo_delete_many'
         ],
         tools: [],
         permissionMode: 'bypassPermissions',

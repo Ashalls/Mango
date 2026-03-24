@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2 } from 'lucide-react'
+import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2, Database, Bot } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -192,6 +192,40 @@ export function Sidebar() {
                         >
                           <PlugZap className="h-3.5 w-3.5" />
                           Connect
+                        </ContextMenu.Item>
+                      )}
+                      {isThisConnected && !profile.isProduction && (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={async () => {
+                            const dbName = prompt('New database name:')
+                            if (!dbName) return
+                            const colName = prompt('Initial collection name:', 'default')
+                            if (!colName) return
+                            try {
+                              await trpc.admin.createCollection.mutate({ database: dbName, collection: colName })
+                              loadDatabases()
+                            } catch (err) {
+                              alert(`Failed: ${err instanceof Error ? err.message : err}`)
+                            }
+                          }}
+                        >
+                          <Database className="h-3.5 w-3.5" />
+                          Create Database
+                        </ContextMenu.Item>
+                      )}
+                      {isThisConnected && (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={async () => {
+                            const current = profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')
+                            const next = current === 'readonly' ? 'readwrite' : 'readonly'
+                            await useConnectionStore.getState().saveProfile({ ...profile, claudeAccess: next })
+                            alert(`Claude access for "${profile.name}" set to ${next}`)
+                          }}
+                        >
+                          <Bot className="h-3.5 w-3.5" />
+                          Claude: {(profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')) === 'readonly' ? 'Enable Write' : 'Set Read-Only'}
                         </ContextMenu.Item>
                       )}
                       <ContextMenu.Separator className="my-1 h-px bg-border" />

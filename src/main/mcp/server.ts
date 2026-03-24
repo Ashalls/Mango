@@ -9,7 +9,7 @@ let httpServer: Server | null = null
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
-    name: 'mongolens',
+    name: 'mango',
     version: '0.1.0'
   })
   registerTools(server)
