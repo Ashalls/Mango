@@ -396,7 +396,39 @@ export function QueryBuilder() {
                 const isExistsOp = row.operator === 'exists' || row.operator === 'not_exists'
 
                 return (
-                  <div key={row.id} className="flex items-center gap-1.5">
+                  <div
+                    key={row.id}
+                    className="flex items-center gap-1.5"
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.add('ring-1', 'ring-primary/50', 'rounded')
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('ring-1', 'ring-primary/50', 'rounded')
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.remove('ring-1', 'ring-primary/50', 'rounded')
+                      const field = e.dataTransfer.getData('text/field-name')
+                      if (field) {
+                        const fieldInfo = availableFields.find((f) => f.name === field)
+                        const updates: Partial<FilterRow> = { field }
+                        if (fieldInfo) {
+                          updates.type = fieldInfo.type
+                          const ops = getOperators(fieldInfo.type)
+                          if (!ops.find((o) => o.value === row.operator)) {
+                            updates.operator = ops[0].value
+                          }
+                        }
+                        updateRow(row.id, updates)
+                      }
+                      // Also accept cell value drops into the value field
+                      const cellValue = e.dataTransfer.getData('text/cell-value')
+                      if (cellValue && !field) {
+                        updateRow(row.id, { value: cellValue })
+                      }
+                    }}
+                  >
                     <GripVertical className="h-3.5 w-3.5 cursor-grab text-muted-foreground" />
 
                     {/* Field dropdown */}
@@ -456,11 +488,12 @@ export function QueryBuilder() {
                         }}
                         onDrop={(e) => {
                           e.preventDefault()
+                          e.stopPropagation()
                           const cellValue = e.dataTransfer.getData('text/cell-value')
                           const text = cellValue || e.dataTransfer.getData('text/plain')
                           if (text) updateRow(row.id, { value: text })
                         }}
-                        onDragOver={(e) => e.preventDefault()}
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
                       />
                     )}
 

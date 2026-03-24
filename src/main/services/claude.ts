@@ -212,6 +212,7 @@ export async function sendMessage(
 
     let fullText = ''
     const seenToolCalls = new Set<string>()
+    let lastFindInput: { database?: string; collection?: string; filter?: Record<string, unknown> } | null = null
 
     for await (const msg of q) {
       if (msg.type === 'assistant') {
@@ -249,6 +250,10 @@ export async function sendMessage(
                 status: 'running'
               }
             })
+            // Track the last mongo_find call's input for table update
+            if (tb.name.includes('find')) {
+              lastFindInput = tb.input as { database?: string; collection?: string; filter?: Record<string, unknown> }
+            }
           }
         }
 
@@ -272,7 +277,8 @@ export async function sendMessage(
         emitToRenderer('claude:stream-end', {
           messageId,
           text: finalText,
-          cost: msg.total_cost_usd
+          cost: msg.total_cost_usd,
+          lastFindInput
         })
         return // Done — exit cleanly
       }

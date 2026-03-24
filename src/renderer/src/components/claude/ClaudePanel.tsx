@@ -74,9 +74,20 @@ export function ClaudePanel() {
         store.updateMessage(data.messageId, { toolCalls: updatedCalls })
 
         // Push mongo_find results directly to the document table
-        if (activeTab && toolCall?.name?.includes('find') && data.result) {
+        const isFindTool = toolCall?.name?.includes('find') ||
+          toolCall?.name?.includes('mongo_find')
+        console.log('[DEBUG tool-result]', { toolCallName: toolCall?.name, isFindTool, hasResult: !!data.result, scope: activeTab?.scope, resultPreview: data.result?.slice(0, 200) })
+        if (activeTab && activeTab.scope === 'collection' && isFindTool && data.result) {
           try {
-            const parsed = JSON.parse(data.result)
+            // Result may be raw JSON or wrapped in MCP content array
+            let resultStr = data.result
+            try {
+              const outer = JSON.parse(resultStr)
+              if (Array.isArray(outer) && outer[0]?.text) {
+                resultStr = outer[0].text
+              }
+            } catch { /* already a plain string */ }
+            const parsed = JSON.parse(resultStr)
             if (parsed.documents && Array.isArray(parsed.documents)) {
               store.updateTab(activeTab.id, {
                 results: { documents: parsed.documents, totalCount: parsed.totalCount ?? parsed.documents.length },
@@ -88,7 +99,7 @@ export function ClaudePanel() {
       }
     }
 
-    const handleStreamEnd = (_: unknown, data: { messageId: string; text: string }) => {
+    const handleStreamEnd = (_: unknown, data: { messageId: string; text: string; lastFindInput?: { database?: string; collection?: string; filter?: Record<string, unknown> } }) => {
       const store = useTabStore.getState()
       store.setStreaming(false)
       if (data.text) {
@@ -105,7 +116,11 @@ export function ClaudePanel() {
         )
         store.updateMessage(data.messageId, { toolCalls: updatedCalls })
       }
-      // Refresh data
+      // If Claude ran a mongo_find, update the tab filter to match and re-query
+      if (data.lastFindInput?.filter && activeTab?.scope === 'collection') {
+        store.updateTab(activeTab.id, { filter: data.lastFindInput.filter, page: 0 })
+      }
+      // Refresh data with the (potentially updated) filter
       store.executeQuery()
       // Auto-save chat session
       const currentTab = store.tabs.find((t) => t.id === store.activeTabId)
