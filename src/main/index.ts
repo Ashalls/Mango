@@ -96,12 +96,6 @@ app.whenReady().then(async () => {
         'document.getElementById("status").innerHTML = "Downloading update<span class=\\"dot\\">.</span><span class=\\"dot\\">.</span><span class=\\"dot\\">.</span>"'
       )
     })
-    autoUpdater.on('update-downloaded', () => {
-      splash.webContents.executeJavaScript(
-        'document.getElementById("status").innerText = "Update ready — restarting..."'
-      )
-      setTimeout(() => autoUpdater.quitAndInstall(), 1500)
-    })
     autoUpdater.on('update-not-available', () => {
       splash.webContents.executeJavaScript(
         'document.getElementById("status").innerText = "Up to date!"'
@@ -140,18 +134,18 @@ app.whenReady().then(async () => {
         mainWindow.webContents.openDevTools()
       }
 
-      // Background update check — notify main window when update is ready
+      // Update notification — always notify user in the main window
       if (!is.dev) {
-        const checkForBackgroundUpdate = () => {
-          autoUpdater.removeAllListeners('update-downloaded')
-          autoUpdater.on('update-downloaded', (info) => {
-            mainWindow.webContents.send('update:downloaded', { version: info.version })
-          })
-          autoUpdater.checkForUpdates().catch(() => {})
-        }
-        // First background check after 5 minutes, then every 30 minutes
-        setTimeout(checkForBackgroundUpdate, 5 * 60 * 1000)
-        setInterval(checkForBackgroundUpdate, 30 * 60 * 1000)
+        // Replace all previous listeners with the main window notification
+        autoUpdater.removeAllListeners('update-downloaded')
+        autoUpdater.on('update-downloaded', (info) => {
+          mainWindow.webContents.send('update:downloaded', { version: info.version })
+        })
+        // If an update was already downloaded during splash, notify immediately
+        // Otherwise check again now (splash check may have started download)
+        autoUpdater.checkForUpdates().catch(() => {})
+        // Re-check every 30 minutes
+        setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 30 * 60 * 1000)
       }
     }, remaining)
   })
