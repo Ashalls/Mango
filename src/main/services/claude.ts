@@ -157,7 +157,13 @@ export async function sendMessage(
           'mcp__mango__mongo_insert_one',
           'mcp__mango__mongo_update_one',
           'mcp__mango__mongo_delete_one',
-          'mcp__mango__mongo_delete_many'
+          'mcp__mango__mongo_delete_many',
+          'mcp__mango__mongo_list_indexes',
+          'mcp__mango__mongo_index_stats',
+          'mcp__mango__mongo_create_index',
+          'mcp__mango__mongo_drop_index',
+          'mcp__mango__mongo_changelog',
+          'mcp__mango__mongo_rollback'
         ],
         tools: [],
         permissionMode: 'bypassPermissions',

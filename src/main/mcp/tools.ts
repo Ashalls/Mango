@@ -7,6 +7,7 @@ import * as mutationActions from '../actions/mutation'
 import * as configService from '../services/config'
 import * as mongoService from '../services/mongodb'
 import * as changelog from '../services/changelog'
+import * as adminActions from '../actions/admin'
 
 /**
  * Check if the active connection allows Claude to write to a specific database.
@@ -131,6 +132,68 @@ export function registerTools(server: McpServer): void {
     return {
       content: [{ type: 'text', text: JSON.stringify(schema, null, 2) }]
     }
+  })
+
+  // --- Index tools ---
+  server.registerTool('mongo_list_indexes', {
+    description: 'List all indexes on a collection',
+    inputSchema: {
+      database: z.string().describe('Database name'),
+      collection: z.string().describe('Collection name')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ database, collection }) => {
+    const indexes = await adminActions.listIndexes(database, collection)
+    return { content: [{ type: 'text', text: JSON.stringify(indexes, null, 2) }] }
+  })
+
+  server.registerTool('mongo_index_stats', {
+    description: 'Get index usage statistics for a collection',
+    inputSchema: {
+      database: z.string().describe('Database name'),
+      collection: z.string().describe('Collection name')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ database, collection }) => {
+    const stats = await adminActions.getIndexStats(database, collection)
+    return { content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }] }
+  })
+
+  server.registerTool('mongo_create_index', {
+    description: 'Create an index on a collection. BLOCKED on readonly connections.',
+    inputSchema: {
+      database: z.string(),
+      collection: z.string(),
+      fields: z.record(z.union([z.number(), z.string()])).describe('Index fields and directions (1, -1, "text", "2dsphere")'),
+      unique: z.boolean().optional().default(false),
+      sparse: z.boolean().optional().default(false),
+      expireAfterSeconds: z.number().optional(),
+      name: z.string().optional()
+    }
+  }, async ({ database, collection, fields, unique, sparse, expireAfterSeconds, name }) => {
+    const blocked = checkWriteAccess(database)
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    const options: Record<string, unknown> = {}
+    if (unique) options.unique = true
+    if (sparse) options.sparse = true
+    if (expireAfterSeconds !== undefined) options.expireAfterSeconds = expireAfterSeconds
+    if (name) options.name = name
+    const indexName = await adminActions.createIndex(database, collection, fields, options)
+    return { content: [{ type: 'text', text: `Created index: ${indexName}` }] }
+  })
+
+  server.registerTool('mongo_drop_index', {
+    description: 'Drop an index by name. BLOCKED on readonly connections.',
+    inputSchema: {
+      database: z.string(),
+      collection: z.string(),
+      indexName: z.string().describe('Name of the index to drop')
+    }
+  }, async ({ database, collection, indexName }) => {
+    const blocked = checkWriteAccess(database)
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    await adminActions.dropIndex(database, collection, indexName)
+    return { content: [{ type: 'text', text: `Dropped index: ${indexName}` }] }
   })
 
   // --- Query tools (always read-only) ---
@@ -318,13 +381,13 @@ export function registerTools(server: McpServer): void {
       changeId: z.string().describe('The change log entry ID to rollback')
     }
   }, async ({ changeId }) => {
-    const blocked = checkWriteAccess(database)
-    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
-
     const entries = changelog.loadChangeLog()
     const entry = entries.find((e) => e.id === changeId)
     if (!entry) return { content: [{ type: 'text', text: 'Change not found' }], isError: true }
     if (entry.rolledBack) return { content: [{ type: 'text', text: 'Already rolled back' }], isError: true }
+
+    const blocked = checkWriteAccess(entry.database)
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
 
     if (entry.operation === 'delete' && entry.documentsBefore?.length) {
       for (const doc of entry.documentsBefore) {
