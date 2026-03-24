@@ -8,6 +8,7 @@ import { MessageBubble } from './MessageBubble'
 import { ToolCallCard } from './ToolCallCard'
 import { trpc } from '@renderer/lib/trpc'
 import type { ChatMessage, ToolCallInfo } from '@shared/types'
+import { playPurr, playHiss } from '@renderer/components/fun/CatMode'
 
 export function ClaudePanel() {
   const [input, setInput] = useState('')
@@ -122,6 +123,25 @@ export function ClaudePanel() {
       }
       // Refresh data with the (potentially updated) filter
       store.executeQuery()
+      // Cat sounds based on Claude's outcome
+      const text = (data.text || '').toLowerCase()
+      const didFindOrMutate = msg?.toolCalls?.some((tc) =>
+        tc.name?.includes('find') || tc.name?.includes('update') ||
+        tc.name?.includes('insert') || tc.name?.includes('delete')
+      )
+      const failedToDeliver =
+        text.includes("couldn't find") || text.includes('could not find') ||
+        text.includes("didn't find") || text.includes('did not find') ||
+        text.includes('no documents') || text.includes('no results') ||
+        text.includes('0 results') || text.includes('not found') ||
+        text.includes("doesn't appear to exist") || text.includes("doesn't exist") ||
+        text.includes('came up empty') || text.includes('no matching') ||
+        text.includes('failed to') || text.includes('unable to')
+      if (didFindOrMutate && failedToDeliver) {
+        playHiss()
+      } else if (data.text) {
+        playPurr()
+      }
       // Auto-save chat session (re-read state to capture tool status updates)
       const currentTab = useTabStore.getState().tabs.find((t) => t.id === useTabStore.getState().activeTabId)
       if (currentTab && currentTab.messages.length > 0) {

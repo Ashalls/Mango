@@ -4,6 +4,7 @@ import { MainPanel } from '@renderer/components/data/MainPanel'
 import { ClaudePanel } from '@renderer/components/claude/ClaudePanel'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useThemeStore } from '@renderer/store/themeStore'
+import { CatMode } from '@renderer/components/fun/CatMode'
 
 function App(): React.JSX.Element {
   useEffect(() => {
@@ -12,10 +13,13 @@ function App(): React.JSX.Element {
   }, [])
 
   return (
-    <AppShell
-      mainPanel={<MainPanel />}
-      claudePanel={<ClaudePanel />}
-    />
+    <>
+      <AppShell
+        mainPanel={<MainPanel />}
+        claudePanel={<ClaudePanel />}
+      />
+      <CatMode />
+    </>
   )
 }
 

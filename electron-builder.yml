@@ -16,6 +16,13 @@ extraResources:
     filter:
       - '*.html'
       - '*.png'
+      - '*.jpg'
+      - '*.gif'
+      - '*.mp3'
+  - from: resources/cats/
+    to: cats/
+  - from: resources/sounds/
+    to: sounds/
 publish:
   provider: github
   owner: Ashalls

@@ -179,7 +179,7 @@ export function QueryBuilder() {
   const [matchMode, setMatchMode] = useState<MatchMode>('$and')
   const [rawMode, setRawMode] = useState(false)
   const [rawJson, setRawJson] = useState('{}')
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const [sortExpanded, setSortExpanded] = useState(false)
   const [projExpanded, setProjExpanded] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
