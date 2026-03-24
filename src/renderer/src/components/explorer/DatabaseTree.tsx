@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
 import type { DatabaseInfo } from '@shared/types'
+import { InsertDocumentsDialog } from '@renderer/components/data/InsertDocumentsDialog'
 
 interface DatabaseTreeProps {
   databases: DatabaseInfo[]
@@ -25,6 +26,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
   const [newCollInput, setNewCollInput] = useState('')
+  const [insertTarget, setInsertTarget] = useState<{ db: string; col: string } | null>(null)
   const {
     collections,
     selectedDatabase,
@@ -329,6 +331,14 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                       )}
                       <ContextMenu.Separator className="my-1 h-px bg-border" />
                       <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                        onSelect={() => setInsertTarget({ db: db.name, col: col.name })}
+                      >
+                        <FileUp className="h-3.5 w-3.5" />
+                        Insert Documents...
+                      </ContextMenu.Item>
+                      <ContextMenu.Separator className="my-1 h-px bg-border" />
+                      <ContextMenu.Item
                         className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none hover:bg-destructive/10"
                         onSelect={() => handleDropCollection(db.name, col.name)}
                       >
@@ -423,6 +433,17 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
           })()}
         </div>
       ))}
+      {insertTarget && (
+        <InsertDocumentsDialog
+          open={true}
+          onOpenChange={(o) => { if (!o) setInsertTarget(null) }}
+          database={insertTarget.db}
+          collection={insertTarget.col}
+          onInserted={() => {
+            loadCollections(insertTarget.db)
+          }}
+        />
+      )}
     </div>
   )
 }
