@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Database, MessageSquare, Plug, PlugZap, Sun, Moon, Monitor } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useConnectionStore } from '@renderer/store/connectionStore'
@@ -13,6 +14,17 @@ export function TopBar() {
   const togglePanel = useClaudeStore((s) => s.togglePanel)
   const isPanelOpen = useClaudeStore((s) => s.isPanelOpen)
   const { theme, setTheme } = useThemeStore()
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handler = (_event: unknown, data: { version: string }) => {
+      setUpdateVersion(data.version)
+    }
+    window.electron?.ipcRenderer.on('update:downloaded', handler)
+    return () => {
+      window.electron?.ipcRenderer.removeListener('update:downloaded', handler)
+    }
+  }, [])
 
   const activeProfile = profiles.find((p) => p.id === activeConnection?.profileId)
   const isConnected = activeConnection?.status === 'connected'
@@ -68,6 +80,17 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-1">
+        {updateVersion && (
+          <div className="flex items-center gap-2 rounded-md bg-green-500/15 px-3 py-1 text-xs text-green-400">
+            <span>v{updateVersion} ready</span>
+            <button
+              className="rounded bg-green-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-green-500"
+              onClick={() => window.electron?.ipcRenderer.invoke('update:install')}
+            >
+              Restart
+            </button>
+          </div>
+        )}
         <Button
           variant="ghost"
           size="icon"

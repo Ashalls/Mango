@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -9,7 +9,6 @@ import * as claudeService from './services/claude'
 import { startMcpServer, stopMcpServer } from './mcp/server'
 
 let mcpPort: number = 27088
-const APP_VERSION = '0.1.2'
 
 /** Resolve a resource file — works in both dev and packaged builds */
 function resourcePath(filename: string): string {
@@ -140,6 +139,20 @@ app.whenReady().then(async () => {
       if (is.dev) {
         mainWindow.webContents.openDevTools()
       }
+
+      // Background update check — notify main window when update is ready
+      if (!is.dev) {
+        const checkForBackgroundUpdate = () => {
+          autoUpdater.removeAllListeners('update-downloaded')
+          autoUpdater.on('update-downloaded', (info) => {
+            mainWindow.webContents.send('update:downloaded', { version: info.version })
+          })
+          autoUpdater.checkForUpdates().catch(() => {})
+        }
+        // First background check after 5 minutes, then every 30 minutes
+        setTimeout(checkForBackgroundUpdate, 5 * 60 * 1000)
+        setInterval(checkForBackgroundUpdate, 30 * 60 * 1000)
+      }
     }, remaining)
   })
 
@@ -150,6 +163,12 @@ app.whenReady().then(async () => {
     }
   })
 })
+
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall()
+})
+
+ipcMain.handle('app:getVersion', () => app.getVersion())
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

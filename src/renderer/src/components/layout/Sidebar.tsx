@@ -13,6 +13,7 @@ import { trpc } from '@renderer/lib/trpc'
 import type { ConnectionProfile } from '@shared/types'
 
 export function Sidebar() {
+  const [version, setVersion] = useState('')
   const [showConnectionDialog, setShowConnectionDialog] = useState(false)
   const [editProfile, setEditProfile] = useState<ConnectionProfile | null>(null)
   const [showCreateDb, setShowCreateDb] = useState<string | null>(null) // connection ID
@@ -29,6 +30,10 @@ export function Sidebar() {
 
   useEffect(() => {
     loadProfiles()
+  }, [])
+
+  useEffect(() => {
+    window.electron?.ipcRenderer.invoke('app:getVersion').then((v: string) => setVersion(v))
   }, [])
 
   useEffect(() => {
@@ -349,6 +354,10 @@ export function Sidebar() {
           }}
         />
       )}
+
+      <div className="mt-auto border-t border-border px-3 py-2">
+        <span className="text-[10px] text-muted-foreground">Mango {version ? `v${version}` : ''}</span>
+      </div>
     </div>
   )
 }
