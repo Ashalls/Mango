@@ -13,6 +13,7 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { SortBuilder } from './SortBuilder'
 import { ProjectionBuilder } from './ProjectionBuilder'
 import { QueryFooter } from './QueryFooter'
+import { QueryHistoryPanel } from './QueryHistoryPanel'
 
 // --- Types ---
 
@@ -181,6 +182,7 @@ export function QueryBuilder() {
   const [expanded, setExpanded] = useState(true)
   const [sortExpanded, setSortExpanded] = useState(false)
   const [projExpanded, setProjExpanded] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { setFilter, setPage, executeQuery } = useTabStore()
   const loading = tab?.loading ?? false
@@ -546,7 +548,10 @@ export function QueryBuilder() {
       {projExpanded && <ProjectionBuilder />}
 
       {/* FOOTER — always visible */}
-      <QueryFooter onRun={handleRun} onToggleHistory={() => {}} loading={loading} />
+      <div className="relative">
+        <QueryFooter onRun={handleRun} onToggleHistory={() => setHistoryOpen(!historyOpen)} loading={loading} />
+        {historyOpen && <QueryHistoryPanel onClose={() => setHistoryOpen(false)} />}
+      </div>
     </div>
   )
 }

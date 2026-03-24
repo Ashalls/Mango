@@ -197,6 +197,20 @@ export const useTabStore = create<TabStore>((set, get) => ({
         limit: tab.pageSize
       })
       get().updateTab(tab.id, { results, loading: false })
+
+      // Auto-save to query history
+      try {
+        trpc.query.saveHistory.mutate({
+          connectionId: tab.connectionId,
+          database: tab.database,
+          collection: tab.collection,
+          filter: tab.filter,
+          sort: tab.sort,
+          projection: tab.projection,
+          limit: tab.pageSize,
+          resultCount: results.totalCount
+        })
+      } catch { /* history save is best-effort */ }
     } catch (err) {
       get().updateTab(tab.id, {
         error: err instanceof Error ? err.message : 'Query failed',
