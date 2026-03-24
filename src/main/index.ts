@@ -9,7 +9,7 @@ import * as claudeService from './services/claude'
 import { startMcpServer, stopMcpServer } from './mcp/server'
 
 let mcpPort: number = 27088
-const APP_VERSION = '0.1.0'
+const APP_VERSION = '0.1.1'
 
 /** Resolve a resource file — works in both dev and packaged builds */
 function resourcePath(filename: string): string {
