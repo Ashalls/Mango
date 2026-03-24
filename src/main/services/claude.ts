@@ -1,8 +1,26 @@
 import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk'
 import type { BrowserWindow } from 'electron'
+import { app } from 'electron'
+import { join } from 'path'
 import { DEFAULT_MCP_PORT } from '@shared/constants'
 import * as configService from './config'
 import * as mongoService from './mongodb'
+
+/**
+ * In packaged builds the SDK's cli.js is inside app.asar.unpacked so that
+ * the spawned node child process can actually read it.
+ */
+function getClaudeExecutablePath(): string | undefined {
+  if (!app.isPackaged) return undefined // let SDK resolve in dev
+  return join(
+    process.resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    '@anthropic-ai',
+    'claude-agent-sdk',
+    'cli.js'
+  )
+}
 
 let mainWindow: BrowserWindow | null = null
 let activeAbortController: AbortController | null = null
@@ -114,6 +132,7 @@ export async function sendMessage(
     const q = claudeQuery({
       prompt: message,
       options: {
+        pathToClaudeCodeExecutable: getClaudeExecutablePath(),
         systemPrompt: buildSystemPrompt(context),
         model: 'claude-sonnet-4-5-20250929',
         abortController: activeAbortController,
