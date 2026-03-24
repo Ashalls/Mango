@@ -1,5 +1,6 @@
 import { router, procedure, z } from '../context'
 import * as queryActions from '../../actions/query'
+import * as queryHistory from '../../services/queryHistory'
 
 export const queryRouter = router({
   find: procedure
@@ -65,5 +66,47 @@ export const queryRouter = router({
     )
     .query(async ({ input }) => {
       return queryActions.explain(input.database, input.collection, input.filter)
-    })
+    }),
+
+  getHistory: procedure
+    .query(async () => {
+      return queryHistory.loadHistory()
+    }),
+
+  saveHistory: procedure
+    .input(
+      z.object({
+        connectionId: z.string(),
+        database: z.string(),
+        collection: z.string(),
+        filter: z.record(z.unknown()),
+        sort: z.record(z.number()).nullable(),
+        projection: z.record(z.number()).nullable(),
+        limit: z.number(),
+        resultCount: z.number()
+      })
+    )
+    .mutation(async ({ input }) => {
+      return queryHistory.saveEntry(input)
+    }),
+
+  deleteHistory: procedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      queryHistory.deleteEntry(input.id)
+      return { deleted: true }
+    }),
+
+  togglePinHistory: procedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      queryHistory.togglePin(input.id)
+      return { toggled: true }
+    }),
+
+  clearHistory: procedure
+    .mutation(async () => {
+      queryHistory.clearHistory()
+      return { cleared: true }
+    }),
 })
