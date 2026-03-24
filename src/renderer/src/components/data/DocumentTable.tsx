@@ -119,7 +119,7 @@ function parseEditValue(newValue: string, oldValue: unknown): unknown {
 
 export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
-  const { selectDocument, setPage, setPageSize, executeQuery } = useTabStore()
+  const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
   const themeMode = useThemeStore((s) => s.theme)
   const effectiveTheme = themeMode === 'system'
     ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -289,7 +289,11 @@ export function DocumentTable() {
                     setContextDoc(e.data)
                     setContextCell(e.colDef.field ? { field: e.colDef.field, value: e.value } : null)
                   }}
-                  rowSelection={{ mode: 'singleRow', enableClickSelection: true }}
+                  rowSelection={{ mode: 'multiRow', enableClickSelection: false, checkboxes: true, headerCheckbox: true }}
+                  onSelectionChanged={(e) => {
+                    const ids = e.api.getSelectedRows().map((r: Record<string, unknown>) => r._id)
+                    setSelectedDocIds(ids)
+                  }}
                   singleClickEdit={false}
                   suppressContextMenu
                   getRowId={(params) => params.data._id ? String(params.data._id) : String(params.rowIndex)}

@@ -25,6 +25,7 @@ export interface Tab {
   selectedDocument: Record<string, unknown> | null
   editorContent: string
   isDirty: boolean
+  selectedDocIds: unknown[]
 
   // Claude state
   messages: ChatMessage[]
@@ -50,6 +51,7 @@ function createTab(connectionId: string, database: string, collection: string, i
     selectedDocument: null,
     editorContent: '',
     isDirty: false,
+    selectedDocIds: [],
     messages: [],
     isStreaming: false
   }
@@ -77,6 +79,9 @@ interface TabStore {
   selectDocument: (doc: Record<string, unknown> | null) => void
   setEditorContent: (content: string) => void
   clearDocument: () => void
+
+  // Selection actions
+  setSelectedDocIds: (ids: unknown[]) => void
 
   // Claude actions
   addMessage: (message: ChatMessage) => void
@@ -238,6 +243,12 @@ export const useTabStore = create<TabStore>((set, get) => ({
   clearDocument: () => {
     const tab = get().getActiveTab()
     if (tab) get().updateTab(tab.id, { selectedDocument: null, editorContent: '', isDirty: false })
+  },
+
+  // Selection actions
+  setSelectedDocIds: (ids) => {
+    const tab = get().getActiveTab()
+    if (tab) get().updateTab(tab.id, { selectedDocIds: ids })
   },
 
   // Claude actions

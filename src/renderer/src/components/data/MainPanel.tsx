@@ -3,6 +3,7 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { TabBar } from '@renderer/components/layout/TabBar'
 import { QueryBuilder } from '@renderer/components/query/QueryBuilder'
 import { DocumentTable } from './DocumentTable'
+import { BulkToolbar } from './BulkToolbar'
 import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
 
@@ -53,6 +54,7 @@ export function MainPanel() {
           {subTab === 'documents' ? (
             <>
               <QueryBuilder />
+              <BulkToolbar />
               <div className={activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
                 <DocumentTable />
               </div>
