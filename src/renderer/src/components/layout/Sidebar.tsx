@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2, Database, Bot } from 'lucide-react'
+import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2, Database, Bot, MessageSquare } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -9,6 +9,7 @@ import { ConnectionDialog } from '@renderer/components/explorer/ConnectionDialog
 import { InputDialog } from '@renderer/components/ui/input-dialog'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useExplorerStore } from '@renderer/store/explorerStore'
+import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
 import type { ConnectionProfile } from '@shared/types'
 
@@ -255,6 +256,15 @@ export function Sidebar() {
                         >
                           <Database className="h-3.5 w-3.5" />
                           Create Database
+                        </ContextMenu.Item>
+                      )}
+                      {isThisConnected && (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => useTabStore.getState().openConnectionTab(profile.id, profile.name)}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          Chat with Claude...
                         </ContextMenu.Item>
                       )}
                       {isThisConnected && (

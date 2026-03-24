@@ -178,8 +178,8 @@ export function ClaudePanel() {
         message: userMessage.content,
         context: {
           connectionName: activeProfile?.name,
-          database: tab.database,
-          collection: tab.collection,
+          database: tab.database || undefined,
+          collection: tab.collection || undefined,
           currentFilter: Object.keys(tab.filter).length > 0 ? tab.filter : undefined,
           resultCount: tab.results?.documents.length,
           page: tab.page + 1,
@@ -212,7 +212,11 @@ export function ClaudePanel() {
           <span className="text-sm font-medium">Claude</span>
           {tab && (
             <span className="text-[10px] text-muted-foreground">
-              {tab.database}.{tab.collection}
+              {tab.scope === 'connection'
+                ? 'Connection'
+                : tab.scope === 'database'
+                  ? tab.database
+                  : `${tab.database}.${tab.collection}`}
             </span>
           )}
           {isStreaming && (
@@ -304,11 +308,25 @@ export function ClaudePanel() {
           <div className="flex h-full items-center justify-center">
             <p className="text-center text-sm text-muted-foreground">
               {tab ? (
-                <>
-                  Ask Claude about <span className="text-foreground">{tab.collection}</span>
-                  <br />
-                  <span className="text-xs">e.g. "Show me all records from July 2019"</span>
-                </>
+                tab.scope === 'connection' ? (
+                  <>
+                    Ask Claude about this connection
+                    <br />
+                    <span className="text-xs">e.g. "List all databases" or "What collections exist?"</span>
+                  </>
+                ) : tab.scope === 'database' ? (
+                  <>
+                    Ask Claude about <span className="text-foreground">{tab.database}</span>
+                    <br />
+                    <span className="text-xs">e.g. "What collections are in this database?" or "Show schema for users"</span>
+                  </>
+                ) : (
+                  <>
+                    Ask Claude about <span className="text-foreground">{tab.collection}</span>
+                    <br />
+                    <span className="text-xs">e.g. "Show me all records from July 2019"</span>
+                  </>
+                )
               ) : (
                 'Open a collection to chat with Claude'
               )}
@@ -343,7 +361,7 @@ export function ClaudePanel() {
         <div className="flex gap-2">
           <textarea
             className="flex-1 resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            placeholder={tab ? `Ask about ${tab.collection}...` : 'Ask Claude...'}
+            placeholder={tab ? (tab.scope === 'connection' ? 'Ask about this connection...' : tab.scope === 'database' ? `Ask about ${tab.database}...` : `Ask about ${tab.collection}...`) : 'Ask Claude...'}
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}

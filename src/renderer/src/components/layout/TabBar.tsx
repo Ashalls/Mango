@@ -1,4 +1,4 @@
-import { X, Table2, Eye } from 'lucide-react'
+import { X, Table2, Eye, Database, MessageSquare } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { useTabStore } from '@renderer/store/tabStore'
 
@@ -20,14 +20,26 @@ export function TabBar() {
           )}
           onClick={() => setActiveTab(tab.id)}
         >
-          {tab.isView
-            ? <Eye className="h-3 w-3 shrink-0 text-purple-400" />
-            : <Table2 className="h-3 w-3 shrink-0 text-blue-400" />
+          {tab.scope === 'connection'
+            ? <MessageSquare className="h-3 w-3 shrink-0 text-emerald-400" />
+            : tab.scope === 'database'
+              ? <Database className="h-3 w-3 shrink-0 text-amber-400" />
+              : tab.isView
+                ? <Eye className="h-3 w-3 shrink-0 text-purple-400" />
+                : <Table2 className="h-3 w-3 shrink-0 text-blue-400" />
           }
-          <span className="truncate max-w-[120px]" title={`${tab.database}.${tab.collection}`}>
+          <span className="truncate max-w-[120px]" title={
+            tab.scope === 'connection'
+              ? tab.label
+              : tab.scope === 'database'
+                ? tab.database
+                : `${tab.database}.${tab.collection}`
+          }>
             {tab.label}
           </span>
-          <span className="text-[10px] text-muted-foreground">{tab.database}</span>
+          {tab.scope === 'collection' && (
+            <span className="text-[10px] text-muted-foreground">{tab.database}</span>
+          )}
           <button
             className="ml-1 rounded p-0.5 opacity-0 hover:bg-secondary group-hover:opacity-100"
             onClick={(e) => {

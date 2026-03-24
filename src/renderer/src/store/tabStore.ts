@@ -10,6 +10,7 @@ export interface Tab {
   collection: string
   label: string
   isView: boolean
+  scope: 'collection' | 'database' | 'connection'
 
   // Query state
   filter: Record<string, unknown>
@@ -41,6 +42,7 @@ function createTab(connectionId: string, database: string, collection: string, i
     collection,
     label: collection,
     isView,
+    scope: 'collection',
     filter: {},
     projection: null,
     sort: null,
@@ -65,6 +67,8 @@ interface TabStore {
 
   // Tab management
   openTab: (connectionId: string, database: string, collection: string, isView?: boolean) => void
+  openDatabaseTab: (connectionId: string, database: string) => void
+  openConnectionTab: (connectionId: string, connectionName: string) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   getActiveTab: () => Tab | null
@@ -120,6 +124,76 @@ export const useTabStore = create<TabStore>((set, get) => ({
     }))
     // Auto-execute query for new tab
     get().executeQuery()
+    get().saveTabs()
+  },
+
+  openDatabaseTab: (connectionId, database) => {
+    const id = `${connectionId}:${database}:__db__`
+    const existing = get().tabs.find((t) => t.id === id)
+    if (existing) {
+      set({ activeTabId: id })
+      return
+    }
+    const tab: Tab = {
+      id,
+      connectionId,
+      database,
+      collection: '',
+      label: `${database} (Chat)`,
+      isView: false,
+      scope: 'database',
+      filter: {},
+      projection: null,
+      sort: null,
+      page: 0,
+      pageSize: 50,
+      results: null,
+      loading: false,
+      error: null,
+      selectedDocument: null,
+      editorContent: '',
+      isDirty: false,
+      selectedDocIds: [],
+      messages: [],
+      isStreaming: false,
+      chatSessionId: crypto.randomUUID()
+    }
+    set((state) => ({ tabs: [...state.tabs, tab], activeTabId: id }))
+    get().saveTabs()
+  },
+
+  openConnectionTab: (connectionId, connectionName) => {
+    const id = `${connectionId}:__conn__`
+    const existing = get().tabs.find((t) => t.id === id)
+    if (existing) {
+      set({ activeTabId: id })
+      return
+    }
+    const tab: Tab = {
+      id,
+      connectionId,
+      database: '',
+      collection: '',
+      label: `${connectionName} (Chat)`,
+      isView: false,
+      scope: 'connection',
+      filter: {},
+      projection: null,
+      sort: null,
+      page: 0,
+      pageSize: 50,
+      results: null,
+      loading: false,
+      error: null,
+      selectedDocument: null,
+      editorContent: '',
+      isDirty: false,
+      selectedDocIds: [],
+      messages: [],
+      isStreaming: false,
+      chatSessionId: crypto.randomUUID()
+    }
+    set((state) => ({ tabs: [...state.tabs, tab], activeTabId: id }))
     get().saveTabs()
   },
 
@@ -192,6 +266,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
   executeQuery: async () => {
     const tab = get().getActiveTab()
     if (!tab) return
+    if (tab.scope !== 'collection') return
 
     get().updateTab(tab.id, { loading: true, error: null })
     try {
@@ -307,7 +382,9 @@ export const useTabStore = create<TabStore>((set, get) => ({
       id: t.id,
       connectionId: t.connectionId,
       database: t.database,
-      collection: t.collection
+      collection: t.collection,
+      scope: t.scope,
+      label: t.label
     }))
     try {
       localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify({ tabs: data, activeTabId }))
@@ -320,9 +397,20 @@ export const useTabStore = create<TabStore>((set, get) => ({
       if (!raw) return
       const { tabs: savedTabs, activeTabId } = JSON.parse(raw)
       if (!Array.isArray(savedTabs)) return
-      const tabs = savedTabs.map((t: { connectionId: string; database: string; collection: string }) =>
-        createTab(t.connectionId, t.database, t.collection)
-      )
+      const tabs = savedTabs.map((t: { connectionId: string; database: string; collection: string; scope?: string; label?: string }) => {
+        const tab = createTab(t.connectionId, t.database, t.collection)
+        tab.scope = (t.scope as Tab['scope']) || 'collection'
+        if (t.label) tab.label = t.label
+        if (tab.scope !== 'collection') {
+          // Reconstruct the id for non-collection tabs
+          if (tab.scope === 'database') {
+            tab.id = `${t.connectionId}:${t.database}:__db__`
+          } else if (tab.scope === 'connection') {
+            tab.id = `${t.connectionId}:__conn__`
+          }
+        }
+        return tab
+      })
       set({ tabs, activeTabId: activeTabId || (tabs.length > 0 ? tabs[0].id : null) })
     } catch { /* ignore */ }
   }

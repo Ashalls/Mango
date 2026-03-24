@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -38,6 +38,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
     loadDatabases
   } = useExplorerStore()
   const openTab = useTabStore((s) => s.openTab)
+  const openDatabaseTab = useTabStore((s) => s.openDatabaseTab)
   const activeTabId = useTabStore((s) => s.activeTabId)
 
   const filteredDatabases = searchFilter
@@ -164,6 +165,13 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 >
                   <Plus className="h-3.5 w-3.5" />
                   New Collection
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                  onSelect={() => openDatabaseTab(connectionId, db.name)}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Chat with Claude...
                 </ContextMenu.Item>
                 {onCopyDatabase && (
                   <ContextMenu.Item

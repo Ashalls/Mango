@@ -94,12 +94,21 @@ function buildSystemPrompt(context: ChatContext): string {
   if (context.connectionName) {
     lines.push(`Connection: ${context.connectionName}`)
   }
-  if (context.database) {
+
+  if (context.database && context.collection) {
+    // Collection-level chat
     lines.push(`Database: ${context.database}`)
-  }
-  if (context.collection) {
     lines.push(`Collection: ${context.collection}`)
+  } else if (context.database && !context.collection) {
+    // Database-level chat
+    lines.push(`Database: ${context.database} (all collections)`)
+    lines.push('You are chatting at the database level. Use mongo_list_collections to discover collections in this database before performing operations.')
+  } else if (!context.database && !context.collection) {
+    // Connection-level chat
+    lines.push('Connection-level chat (all databases).')
+    lines.push('You are chatting at the connection level. Use mongo_list_databases and mongo_list_collections to discover and explore databases and collections.')
   }
+
   if (context.currentFilter && Object.keys(context.currentFilter).length > 0) {
     lines.push(`Current query filter: ${JSON.stringify(context.currentFilter)}`)
   }
