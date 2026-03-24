@@ -15,6 +15,7 @@ export function saveConnection(input: {
   isProduction?: boolean
   claudeAccess?: 'readonly' | 'readwrite'
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
+  databaseCodebasePaths?: Record<string, string>
 }): ConnectionProfile {
   const connections = configService.loadConnections()
   const profile: ConnectionProfile = {
@@ -24,7 +25,8 @@ export function saveConnection(input: {
     color: input.color,
     isProduction: input.isProduction,
     claudeAccess: input.claudeAccess ?? (input.isProduction ? 'readonly' : 'readwrite'),
-    claudeDbOverrides: input.claudeDbOverrides
+    claudeDbOverrides: input.claudeDbOverrides,
+    databaseCodebasePaths: input.databaseCodebasePaths
   }
 
   const index = connections.findIndex((c) => c.id === profile.id)
