@@ -8,6 +8,12 @@ files:
   - '!electron.vite.config.*'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  - from: resources/
+    to: .
+    filter:
+      - '*.html'
+      - '*.png'
 publish:
   provider: github
   owner: Ashalls

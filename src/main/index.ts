@@ -11,8 +11,16 @@ import { startMcpServer, stopMcpServer } from './mcp/server'
 let mcpPort: number = 27088
 const APP_VERSION = '0.1.0'
 
+/** Resolve a resource file — works in both dev and packaged builds */
+function resourcePath(filename: string): string {
+  if (is.dev) {
+    return join(__dirname, '../../resources', filename)
+  }
+  return join(process.resourcesPath, filename)
+}
+
 function createSplashWindow(): BrowserWindow {
-  const icon = nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
+  const icon = nativeImage.createFromPath(resourcePath('icon.png'))
 
   const splash = new BrowserWindow({
     width: 420,
@@ -29,7 +37,7 @@ function createSplashWindow(): BrowserWindow {
     }
   })
 
-  splash.loadFile(join(__dirname, '../../resources/splash.html'))
+  splash.loadFile(resourcePath('splash.html'))
   splash.center()
   splash.show()
 
@@ -37,7 +45,7 @@ function createSplashWindow(): BrowserWindow {
 }
 
 function createWindow(): BrowserWindow {
-  const icon = nativeImage.createFromPath(join(__dirname, '../../resources/icon.png'))
+  const icon = nativeImage.createFromPath(resourcePath('icon.png'))
 
   const mainWindow = new BrowserWindow({
     width: 1400,
