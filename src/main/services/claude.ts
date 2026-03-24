@@ -127,7 +127,13 @@ function buildSystemPrompt(context: ChatContext): string {
     lines.push('')
     lines.push('## Codebase Analysis')
     lines.push(`Database "${context.database}" has a linked codebase at: ${dbCodebasePath}`)
-    lines.push('Use the mongo_search_codebase tool to search for specific terms in the codebase (collection names, field names, patterns, etc.).')
+    lines.push('You MUST use the mongo_search_codebase tool when:')
+    lines.push('- Recommending indexes (search for collection names, query patterns, .find(), .aggregate(), sort, filter usage)')
+    lines.push('- Advising on schema design (search for model definitions, schemas, interfaces)')
+    lines.push('- Understanding how data is used (search for collection names, field names)')
+    lines.push('- The user asks about query patterns, performance, or data modeling')
+    lines.push('')
+    lines.push('Always search the codebase BEFORE making recommendations. Your index/schema advice is only useful if it reflects actual application query patterns, not hypothetical ones.')
   }
 
   return lines.join('\n')
