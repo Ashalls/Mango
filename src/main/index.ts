@@ -76,6 +76,20 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
+// Enforce single instance
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const windows = BrowserWindow.getAllWindows()
+    if (windows.length > 0) {
+      if (windows[0].isMinimized()) windows[0].restore()
+      windows[0].focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.mango.app')
 

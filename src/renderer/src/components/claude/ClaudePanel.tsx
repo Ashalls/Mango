@@ -122,8 +122,8 @@ export function ClaudePanel() {
       }
       // Refresh data with the (potentially updated) filter
       store.executeQuery()
-      // Auto-save chat session
-      const currentTab = store.tabs.find((t) => t.id === store.activeTabId)
+      // Auto-save chat session (re-read state to capture tool status updates)
+      const currentTab = useTabStore.getState().tabs.find((t) => t.id === useTabStore.getState().activeTabId)
       if (currentTab && currentTab.messages.length > 0) {
         trpc.chatHistory.save
           .mutate({
@@ -162,8 +162,20 @@ export function ClaudePanel() {
             trpc.chatHistory.load.query({ sessionId: sessionList[0].id }).then((session) => {
               if (session && session.messages.length > 0) {
                 const store = useTabStore.getState()
+                // Sanitize any stale running/pending tool statuses from previous sessions
+                const messages = session.messages.map((m) => {
+                  if (!m.toolCalls?.length) return m
+                  return {
+                    ...m,
+                    toolCalls: m.toolCalls.map((tc) =>
+                      tc.status === 'pending' || tc.status === 'running'
+                        ? { ...tc, status: 'success' as const }
+                        : tc
+                    )
+                  }
+                })
                 store.updateTab(tab.id, {
-                  messages: session.messages,
+                  messages,
                   chatSessionId: session.id
                 })
               }
@@ -287,8 +299,20 @@ export function ClaudePanel() {
                   const session = await trpc.chatHistory.load.query({ sessionId: s.id })
                   if (session) {
                     const store = useTabStore.getState()
+                    // Sanitize any stale running/pending tool statuses from previous sessions
+                    const messages = session.messages.map((m) => {
+                      if (!m.toolCalls?.length) return m
+                      return {
+                        ...m,
+                        toolCalls: m.toolCalls.map((tc) =>
+                          tc.status === 'pending' || tc.status === 'running'
+                            ? { ...tc, status: 'success' as const }
+                            : tc
+                        )
+                      }
+                    })
                     store.updateTab(tab!.id, {
-                      messages: session.messages,
+                      messages,
                       chatSessionId: session.id
                     })
                   }
