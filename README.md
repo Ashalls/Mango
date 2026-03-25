@@ -35,8 +35,12 @@ Instead of switching between a database GUI, documentation, and an AI chat, Mang
 - **Data export/import** — export collections to JSON/CSV, import from files
 - **Migration tools** — move data between databases and collections
 - **Operation changelog** — audit trail of all write operations performed through the app
+- **Persistent chat history** — Claude conversations are saved and can be resumed across sessions
+- **Drag-and-drop query building** — drag fields onto filter rows to build queries visually
+- **Settings menu** — configurable theme and sound preferences via popover in the top bar
+- **Cat sounds** — playful audio feedback (meow on launch, purr on success, hiss on failure) with toggle in settings
 - **Auto-updater** — seamless updates via GitHub Releases
-- **Dark/light theme** — persistent theme preference
+- **Dark/light/system theme** — persistent theme preference with system auto-detection
 
 ## Tech stack
 
@@ -85,7 +89,8 @@ Mango/
     renderer/         — React frontend (components, stores, styles)
     preload/          — Electron context bridge
     shared/           — Shared types and constants
-  resources/          — App icons, splash screen
+  resources/
+    sounds/           — Cat sound effects (meow, purr, hiss)
   electron.vite.config.ts
   electron-builder.yml
 ```
