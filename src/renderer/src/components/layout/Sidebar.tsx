@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2, Database, Bot, MessageSquare } from 'lucide-react'
+import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, Copy, ClipboardPaste, Pencil, Trash2, Database, Bot, MessageSquare, Upload } from 'lucide-react'
+import { PasteDatabaseDialog, type PasteDatabaseResult } from '@renderer/components/explorer/PasteDatabaseDialog'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -22,6 +23,13 @@ export function Sidebar() {
   const [clipboard, setClipboard] = useState<{
     connectionId: string
     database: string
+  } | null>(null)
+  const [pasteTarget, setPasteTarget] = useState<string | null>(null) // target connection ID
+  const [importDump, setImportDump] = useState<{
+    connectionId: string
+    importDir: string
+    detectedName: string
+    collections: string[]
   } | null>(null)
 
   const { profiles, activeConnection, connectedIds, loadProfiles, connect, disconnect, setActive } =
@@ -51,39 +59,31 @@ export function Sidebar() {
     setClipboard({ connectionId, database })
   }
 
-  const handlePasteDatabase = async (targetConnectionId: string) => {
+  const handlePasteDatabase = (targetConnectionId: string) => {
     if (!clipboard) return
     const targetProfile = profiles.find((p) => p.id === targetConnectionId)
     if (targetProfile?.isProduction) {
       alert('Cannot paste into a production connection. Production connections are protected from mass write operations.')
       return
     }
+    setPasteTarget(targetConnectionId)
+  }
 
-    const dbName = prompt(
-      `Paste database "${clipboard.database}" as:`,
-      clipboard.database
-    )
-    if (!dbName) return
-
-    if (
-      !confirm(
-        `Copy "${clipboard.database}" → "${dbName}" on "${targetProfile?.name}"?\n\nThis will copy all collections and documents.`
-      )
-    )
-      return
-
+  const handlePasteSubmit = async (result: PasteDatabaseResult) => {
+    if (!clipboard || !pasteTarget) return
     try {
       await trpc.migration.copyDatabase.mutate({
         sourceConnectionId: clipboard.connectionId,
         sourceDatabase: clipboard.database,
-        targetConnectionId,
-        targetDatabase: dbName,
-        dropTarget: false
+        targetConnectionId: pasteTarget,
+        targetDatabase: result.targetDatabase,
+        dropTarget: result.dropTarget
       })
-      alert('Database copy started. Check progress in the console.')
       loadDatabases()
     } catch (err) {
       alert(`Failed: ${err instanceof Error ? err.message : err}`)
+    } finally {
+      setPasteTarget(null)
     }
   }
 
@@ -178,7 +178,7 @@ export function Sidebar() {
                             searchFilter={search}
                             connectionId={profile.id}
                             onCopyDatabase={(db) => handleCopyDatabase(profile.id, db)}
-                            canPaste={clipboard !== null && clipboard.connectionId !== profile.id}
+                            canPaste={clipboard !== null}
                             onPasteDatabase={() => handlePasteDatabase(profile.id)}
                             isProduction={profile.isProduction}
                             claudeAccess={profile.claudeAccess}
@@ -256,6 +256,29 @@ export function Sidebar() {
                         >
                           <Database className="h-3.5 w-3.5" />
                           Create Database
+                        </ContextMenu.Item>
+                      )}
+                      {isThisConnected && !profile.isProduction && (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={async () => {
+                            try {
+                              const result = await trpc.exportImport.pickDumpFolder.mutate()
+                              if (result) {
+                                setImportDump({
+                                  connectionId: profile.id,
+                                  importDir: result.importDir,
+                                  detectedName: result.detectedName,
+                                  collections: result.collections
+                                })
+                              }
+                            } catch (err) {
+                              alert(`Failed: ${err instanceof Error ? err.message : err}`)
+                            }
+                          }}
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          Import Database from Dump
                         </ContextMenu.Item>
                       )}
                       {isThisConnected && (
@@ -364,6 +387,55 @@ export function Sidebar() {
           }}
         />
       )}
+
+      {pasteTarget && clipboard && (() => {
+        const targetProfile = profiles.find((p) => p.id === pasteTarget)
+        const sourceProfile = profiles.find((p) => p.id === clipboard.connectionId)
+        const isSameConnection = clipboard.connectionId === pasteTarget
+        const existingDbNames = databases.map((d) => d.name)
+        return (
+          <PasteDatabaseDialog
+            sourceName={clipboard.database}
+            sourceConnection={sourceProfile?.name || 'Unknown'}
+            targetConnection={targetProfile?.name || 'Unknown'}
+            existingDatabases={existingDbNames}
+            isSameConnection={isSameConnection}
+            onSubmit={handlePasteSubmit}
+            onCancel={() => setPasteTarget(null)}
+          />
+        )
+      })()}
+
+      {importDump && (() => {
+        const targetProfile = profiles.find((p) => p.id === importDump.connectionId)
+        const existingDbNames = databases.map((d) => d.name)
+        return (
+          <PasteDatabaseDialog
+            sourceName={importDump.detectedName}
+            sourceConnection="Dump file"
+            targetConnection={targetProfile?.name || 'Unknown'}
+            existingDatabases={existingDbNames}
+            isSameConnection={false}
+            previewCollections={importDump.collections}
+            variant="import"
+            onSubmit={async (result) => {
+              setImportDump(null)
+              try {
+                await trpc.exportImport.importDatabaseFromDump.mutate({
+                  connectionId: importDump.connectionId,
+                  importDir: importDump.importDir,
+                  targetDatabase: result.targetDatabase,
+                  dropTarget: result.dropTarget
+                })
+                loadDatabases()
+              } catch (err) {
+                alert(`Import failed: ${err instanceof Error ? err.message : err}`)
+              }
+            }}
+            onCancel={() => setImportDump(null)}
+          />
+        )
+      })()}
 
       <div className="mt-auto border-t border-border px-3 py-2">
         <span className="text-[10px] text-muted-foreground">Mango {version ? `v${version}` : ''}</span>

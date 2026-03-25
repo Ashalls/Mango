@@ -56,7 +56,16 @@ function buildSystemPrompt(context: ChatContext): string {
   const lines = [
     'You are an assistant embedded in Mango, a MongoDB client application.',
     'You have access to MongoDB tools via MCP that let you query, modify, and explore databases.',
-    'When you run a query, the results appear in the user\'s table view automatically.',
+    '',
+    '## CONNECTION RULES',
+    '- You are ALREADY connected to the active database. Do NOT call mongo_connect or mongo_switch_connection unless the user explicitly asks you to switch to a different connection.',
+    '- All query tools (mongo_find, mongo_aggregate, mongo_count, etc.) work on the active connection. Just use them directly with the database and collection names.',
+    '',
+    '## QUERY BEHAVIOR',
+    '- When investigating or searching for data, use mongo_aggregate, mongo_count, and mongo_distinct. These do NOT affect the user\'s table view.',
+    '- mongo_find results are automatically displayed in the user\'s table view. Only use mongo_find when you want to SHOW results to the user.',
+    '- When you find relevant data during investigation, summarize your findings in chat and ask: "Would you like me to display these documents in the table view?"',
+    '- When the user confirms, THEN use mongo_find with the appropriate filter, sort, and limit to render the results.',
     '',
     '## WRITE ACCESS RULES',
     '- The system enforces write access at the tool level. If a tool call is blocked, you will get a BLOCKED error.',
@@ -205,64 +214,93 @@ export async function sendMessage(
         tools: [],
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        maxTurns: 30,
+        maxTurns: 200,
         persistSession: false
       }
     })
 
     let fullText = ''
+    let currentTurnText = ''
+    let previousTurnsText = ''
     const seenToolCalls = new Set<string>()
-    let lastFindInput: { database?: string; collection?: string; filter?: Record<string, unknown> } | null = null
+    const activeTurnToolIds: string[] = []
 
     for await (const msg of q) {
       if (msg.type === 'assistant') {
         const textBlocks = msg.message.content.filter(
           (b: { type: string }) => b.type === 'text'
         )
-        const text = textBlocks
+        const turnText = textBlocks
           .map((b: { type: string; text: string }) => b.text)
           .join('')
 
-        if (text && text !== fullText) {
-          fullText = text
-          emitToRenderer('claude:text-delta', { messageId, text: fullText })
-        }
-
-        // Tool use blocks
+        // Detect new tool uses
         const toolUseBlocks = msg.message.content.filter(
           (b: { type: string }) => b.type === 'tool_use'
         )
-        for (const block of toolUseBlocks) {
+        const newToolUses = toolUseBlocks.filter(
+          (b: { type: string; id: string }) => !seenToolCalls.has(b.id)
+        )
+
+        // Detect turn boundary: text changed completely or new tools after previous ones completed
+        const textChanged = turnText && currentTurnText && !turnText.startsWith(currentTurnText)
+        const newToolsAfterPrevious = newToolUses.length > 0 && activeTurnToolIds.length > 0
+
+        if (textChanged || newToolsAfterPrevious) {
+          // New turn — mark previous tools as complete
+          for (const toolId of activeTurnToolIds) {
+            emitToRenderer('claude:tool-result', {
+              messageId,
+              toolUseId: toolId,
+              result: '',
+              status: 'success'
+            })
+          }
+          activeTurnToolIds.length = 0
+          if (currentTurnText) {
+            previousTurnsText = fullText
+          }
+          currentTurnText = ''
+        }
+
+        // Accumulate text across turns instead of replacing
+        if (turnText && turnText !== currentTurnText) {
+          currentTurnText = turnText
+          fullText = previousTurnsText
+            ? previousTurnsText + '\n\n' + turnText
+            : turnText
+          emitToRenderer('claude:text-delta', { messageId, text: fullText })
+        }
+
+        // Register new tool calls
+        for (const block of newToolUses) {
           const tb = block as {
             type: string
             id: string
             name: string
             input: Record<string, unknown>
           }
-          if (!seenToolCalls.has(tb.id)) {
-            seenToolCalls.add(tb.id)
-            emitToRenderer('claude:tool-use', {
-              messageId,
-              toolCall: {
-                id: tb.id,
-                name: tb.name,
-                input: tb.input,
-                status: 'running'
-              }
-            })
-            // Track the last mongo_find call's input for table update
-            if (tb.name.includes('find')) {
-              lastFindInput = tb.input as { database?: string; collection?: string; filter?: Record<string, unknown> }
+          seenToolCalls.add(tb.id)
+          activeTurnToolIds.push(tb.id)
+          emitToRenderer('claude:tool-use', {
+            messageId,
+            toolCall: {
+              id: tb.id,
+              name: tb.name,
+              input: tb.input,
+              status: 'running'
             }
-          }
+          })
         }
 
-        // Tool result blocks
+        // Tool result blocks (if SDK includes them in assistant messages)
         const toolResultBlocks = msg.message.content.filter(
           (b: { type: string }) => b.type === 'tool_result'
         )
         for (const block of toolResultBlocks) {
           const tr = block as { type: string; tool_use_id: string; content: unknown }
+          const idx = activeTurnToolIds.indexOf(tr.tool_use_id)
+          if (idx >= 0) activeTurnToolIds.splice(idx, 1)
           emitToRenderer('claude:tool-result', {
             messageId,
             toolUseId: tr.tool_use_id,
@@ -277,8 +315,8 @@ export async function sendMessage(
         emitToRenderer('claude:stream-end', {
           messageId,
           text: finalText,
-          cost: msg.total_cost_usd,
-          lastFindInput
+          lastTurnText: currentTurnText,
+          cost: msg.total_cost_usd
         })
         return // Done — exit cleanly
       }

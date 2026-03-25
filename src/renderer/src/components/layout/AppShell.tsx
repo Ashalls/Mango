@@ -1,5 +1,6 @@
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+import { OperationProgressPanel } from '@renderer/components/operations/OperationProgressPanel'
 import { useClaudeStore } from '@renderer/store/claudeStore'
 import { cn } from '@renderer/lib/utils'
 
@@ -35,6 +36,9 @@ export function AppShell({ mainPanel, claudePanel }: AppShellProps) {
           {isPanelOpen && claudePanel}
         </div>
       </div>
+
+      {/* Operation Progress Toasts */}
+      <OperationProgressPanel />
     </div>
   )
 }

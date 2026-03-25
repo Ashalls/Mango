@@ -7,6 +7,7 @@ import { appRouter } from './trpc/router'
 import * as mongoService from './services/mongodb'
 import * as claudeService from './services/claude'
 import { startMcpServer, stopMcpServer } from './mcp/server'
+import { setToolsMainWindow } from './mcp/tools'
 
 let mcpPort: number = 27088
 
@@ -139,6 +140,7 @@ app.whenReady().then(async () => {
   // Create main window (hidden)
   const mainWindow = createWindow()
   claudeService.setMainWindow(mainWindow)
+  setToolsMainWindow(mainWindow)
   createIPCHandler({ router: appRouter, windows: [mainWindow] })
 
   // Wait for main window to be ready, then swap

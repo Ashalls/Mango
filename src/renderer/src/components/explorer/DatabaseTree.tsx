@@ -270,10 +270,9 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 <ContextMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                   onSelect={async () => {
-                    const result = await trpc.exportImport.exportDatabaseDump.mutate({
+                    await trpc.exportImport.exportDatabaseDump.mutate({
                       connectionId, database: db.name
                     })
-                    if (result) alert(`Database exported to ${result.path}`)
                   }}
                 >
                   <Download className="h-3.5 w-3.5" />
@@ -285,10 +284,9 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                     onSelect={async () => {
                       const drop = confirm('Drop existing collections before import?')
                       try {
-                        const result = await trpc.exportImport.importDatabaseDump.mutate({
+                        await trpc.exportImport.importDatabaseDump.mutate({
                           connectionId, database: db.name, dropExisting: drop
                         })
-                        if (result) alert(`Imported ${result.collections} collections, ${result.documents} documents`)
                         loadCollections(db.name)
                       } catch (err) {
                         alert(`Import failed: ${err instanceof Error ? err.message : err}`)

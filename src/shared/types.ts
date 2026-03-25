@@ -81,3 +81,31 @@ export interface CopyProgress {
   status: 'pending' | 'copying' | 'done' | 'error'
   error?: string
 }
+
+/** Unified progress tracking for long-running database operations */
+export interface OperationProgress {
+  /** Unique ID for this operation */
+  id: string
+  type: 'copy' | 'export' | 'import'
+  /** Human-readable label, e.g. "Copy mydb → mydb_copy" */
+  label: string
+  status: 'running' | 'done' | 'error'
+  /** Current step description, e.g. "Copying users (500/2000)" */
+  currentStep: string
+  /** Overall items processed */
+  processed: number
+  /** Overall total items (0 if unknown) */
+  total: number
+  /** Per-collection progress */
+  collections: CollectionProgress[]
+  error?: string
+  startedAt: number
+}
+
+export interface CollectionProgress {
+  name: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  copied: number
+  total: number
+  error?: string
+}

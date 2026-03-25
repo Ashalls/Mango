@@ -1,5 +1,6 @@
 import { router, procedure, z } from '../context'
 import * as exportImportActions from '../../actions/exportImport'
+import * as migrationActions from '../../actions/migration'
 
 export const exportImportRouter = router({
   exportCollection: procedure
@@ -29,6 +30,33 @@ export const exportImportRouter = router({
     }))
     .mutation(async ({ input }) => {
       return exportImportActions.importDatabaseDump(input.connectionId, input.database, input.dropExisting)
+    }),
+
+  pickDumpFolder: procedure
+    .mutation(async () => {
+      return exportImportActions.pickDumpFolder()
+    }),
+
+  importDatabaseFromDump: procedure
+    .input(z.object({
+      connectionId: z.string(),
+      importDir: z.string(),
+      targetDatabase: z.string(),
+      dropTarget: z.boolean()
+    }))
+    .mutation(async ({ input }) => {
+      return exportImportActions.importDatabaseFromDump(
+        input.connectionId, input.importDir, input.targetDatabase, input.dropTarget
+      )
+    }),
+
+  cancelOperation: procedure
+    .input(z.object({ operationId: z.string() }))
+    .mutation(({ input }) => {
+      // Try both modules
+      const cancelled = exportImportActions.cancelOperation(input.operationId) ||
+        migrationActions.cancelOperation(input.operationId)
+      return { cancelled }
     }),
 
   importCollection: procedure

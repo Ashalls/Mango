@@ -5,7 +5,7 @@ import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { MessageBubble } from './MessageBubble'
-import { ToolCallCard } from './ToolCallCard'
+import { ToolCallGroup } from './ToolCallGroup'
 import { trpc } from '@renderer/lib/trpc'
 import type { ChatMessage, ToolCallInfo } from '@shared/types'
 import { playPurr, playHiss } from '@renderer/components/fun/CatMode'
@@ -66,41 +66,29 @@ export function ClaudePanel() {
       const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
       const msg = activeTab?.messages.find((m) => m.id === data.messageId)
       if (msg?.toolCalls) {
-        const toolCall = msg.toolCalls.find((tc) => tc.id === data.toolUseId)
         const updatedCalls = msg.toolCalls.map((tc) =>
           tc.id === data.toolUseId
             ? { ...tc, result: data.result, status: data.status as ToolCallInfo['status'] }
             : tc
         )
         store.updateMessage(data.messageId, { toolCalls: updatedCalls })
-
-        // Push mongo_find results directly to the document table
-        const isFindTool = toolCall?.name?.includes('find') ||
-          toolCall?.name?.includes('mongo_find')
-        console.log('[DEBUG tool-result]', { toolCallName: toolCall?.name, isFindTool, hasResult: !!data.result, scope: activeTab?.scope, resultPreview: data.result?.slice(0, 200) })
-        if (activeTab && activeTab.scope === 'collection' && isFindTool && data.result) {
-          try {
-            // Result may be raw JSON or wrapped in MCP content array
-            let resultStr = data.result
-            try {
-              const outer = JSON.parse(resultStr)
-              if (Array.isArray(outer) && outer[0]?.text) {
-                resultStr = outer[0].text
-              }
-            } catch { /* already a plain string */ }
-            const parsed = JSON.parse(resultStr)
-            if (parsed.documents && Array.isArray(parsed.documents)) {
-              store.updateTab(activeTab.id, {
-                results: { documents: parsed.documents, totalCount: parsed.totalCount ?? parsed.documents.length },
-                loading: false
-              })
-            }
-          } catch { /* not valid JSON, ignore */ }
-        }
       }
     }
 
-    const handleStreamEnd = (_: unknown, data: { messageId: string; text: string; lastFindInput?: { database?: string; collection?: string; filter?: Record<string, unknown> } }) => {
+    // Handle find results emitted directly from the MCP tool
+    const handleFindResults = (_: unknown, data: { database: string; collection: string; documents: Record<string, unknown>[]; totalCount: number }) => {
+      const store = useTabStore.getState()
+      const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
+      if (activeTab && activeTab.scope === 'collection' &&
+          activeTab.database === data.database && activeTab.collection === data.collection) {
+        store.updateTab(activeTab.id, {
+          results: { documents: data.documents, totalCount: data.totalCount },
+          loading: false
+        })
+      }
+    }
+
+    const handleStreamEnd = (_: unknown, data: { messageId: string; text: string; lastTurnText?: string }) => {
       const store = useTabStore.getState()
       store.setStreaming(false)
       if (data.text) {
@@ -117,14 +105,15 @@ export function ClaudePanel() {
         )
         store.updateMessage(data.messageId, { toolCalls: updatedCalls })
       }
-      // If Claude ran a mongo_find, update the tab filter to match and re-query
-      if (data.lastFindInput?.filter && activeTab?.scope === 'collection') {
-        store.updateTab(activeTab.id, { filter: data.lastFindInput.filter, page: 0 })
+      // Only refresh the table if Claude performed mutations (insert/update/delete)
+      const didMutate = msg?.toolCalls?.some((tc) =>
+        tc.name?.includes('insert') || tc.name?.includes('update') || tc.name?.includes('delete')
+      )
+      if (didMutate) {
+        store.executeQuery()
       }
-      // Refresh data with the (potentially updated) filter
-      store.executeQuery()
-      // Cat sounds based on Claude's outcome
-      const text = (data.text || '').toLowerCase()
+      // Cat sounds based on Claude's final turn only (not accumulated intermediate text)
+      const text = (data.lastTurnText || data.text || '').toLowerCase()
       const didFindOrMutate = msg?.toolCalls?.some((tc) =>
         tc.name?.includes('find') || tc.name?.includes('update') ||
         tc.name?.includes('insert') || tc.name?.includes('delete')
@@ -159,6 +148,7 @@ export function ClaudePanel() {
     electron.ipcRenderer.on('claude:text-delta', handleTextDelta)
     electron.ipcRenderer.on('claude:tool-use', handleToolUse)
     electron.ipcRenderer.on('claude:tool-result', handleToolResult)
+    electron.ipcRenderer.on('claude:find-results', handleFindResults)
     electron.ipcRenderer.on('claude:stream-end', handleStreamEnd)
 
     return () => {
@@ -166,6 +156,7 @@ export function ClaudePanel() {
       electron.ipcRenderer.removeAllListeners('claude:text-delta')
       electron.ipcRenderer.removeAllListeners('claude:tool-use')
       electron.ipcRenderer.removeAllListeners('claude:tool-result')
+      electron.ipcRenderer.removeAllListeners('claude:find-results')
       electron.ipcRenderer.removeAllListeners('claude:stream-end')
     }
   }, [])
@@ -397,17 +388,15 @@ export function ClaudePanel() {
               <div key={msg.id}>
                 {msg.role === 'assistant' && msg.toolCalls?.length ? (
                   <>
-                    {msg.toolCalls.map((tc) => (
-                      <ToolCallCard key={tc.id} toolCall={tc} />
-                    ))}
+                    <ToolCallGroup toolCalls={msg.toolCalls} />
                     <MessageBubble message={msg} />
                   </>
                 ) : (
                   <>
                     <MessageBubble message={msg} />
-                    {msg.toolCalls?.map((tc) => (
-                      <ToolCallCard key={tc.id} toolCall={tc} />
-                    ))}
+                    {msg.toolCalls?.length ? (
+                      <ToolCallGroup toolCalls={msg.toolCalls} />
+                    ) : null}
                   </>
                 )}
               </div>

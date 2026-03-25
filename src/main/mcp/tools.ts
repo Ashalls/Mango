@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { BrowserWindow } from 'electron'
 import * as connectionActions from '../actions/connection'
 import * as explorerActions from '../actions/explorer'
 import * as queryActions from '../actions/query'
@@ -8,6 +9,18 @@ import * as configService from '../services/config'
 import * as mongoService from '../services/mongodb'
 import * as changelog from '../services/changelog'
 import * as adminActions from '../actions/admin'
+
+let _mainWindow: BrowserWindow | null = null
+
+export function setToolsMainWindow(win: BrowserWindow): void {
+  _mainWindow = win
+}
+
+function emitToRenderer(event: string, data: unknown): void {
+  if (_mainWindow && !_mainWindow.isDestroyed()) {
+    _mainWindow.webContents.send(event, data)
+  }
+}
 
 /**
  * Check if the active connection allows Claude to write to a specific database.
@@ -211,6 +224,13 @@ export function registerTools(server: McpServer): void {
     annotations: { readOnlyHint: true, destructiveHint: false }
   }, async (params) => {
     const result = await queryActions.find(params)
+    // Emit directly to renderer so the table can display these exact results
+    emitToRenderer('claude:find-results', {
+      database: params.database,
+      collection: params.collection,
+      documents: result.documents,
+      totalCount: result.totalCount
+    })
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
     }

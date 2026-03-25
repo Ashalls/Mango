@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, useRef } from 'react'
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community'
 import type { CellEditingStoppedEvent } from 'ag-grid-community'
@@ -13,7 +13,10 @@ import {
   Braces,
   Trash2,
   Copy,
-  Hash
+  Hash,
+  Plus,
+  Check,
+  X
 } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
@@ -148,9 +151,14 @@ export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
   const themeMode = useSettingsStore((s) => s.theme)
-  const effectiveTheme = themeMode === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : themeMode
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  const effectiveTheme = themeMode === 'system' ? (systemDark ? 'dark' : 'light') : themeMode
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [contextDoc, setContextDoc] = useState<Record<string, unknown> | null>(null)
   const [contextCell, setContextCell] = useState<{ field: string; value: unknown } | null>(null)
@@ -197,12 +205,19 @@ export function DocumentTable() {
             resizable: true,
             sortable: true,
             filter: true,
-            editable: key !== '_id' && !tab.isView,
-            minWidth: key === '_id' ? 180 : 120,
-            width: key === '_id' ? 220 : undefined,
+            editable: (params: { data?: Record<string, unknown> }) => {
+              // Add row: all fields except _id are editable
+              if (params.data?.__isAddRow) return key !== '_id'
+              // Normal rows: editable except _id and views
+              return key !== '_id' && !tab.isView
+            },
+            minWidth: key === '_id' ? 200 : 120,
+            width: key === '_id' ? 240 : undefined,
             flex: key === '_id' ? 0 : 1,
             suppressSizeToFit: key === '_id',
-            valueFormatter: (params: { value: unknown }) => {
+            valueFormatter: (params: { value: unknown; data?: Record<string, unknown> }) => {
+              // Show "auto" for _id in add row
+              if (params.data?.__isAddRow && key === '_id') return '(auto)'
               const val = params.value
               if (val === null || val === undefined) return ''
               if (typeof val === 'object') return JSON.stringify(val)
@@ -213,7 +228,36 @@ export function DocumentTable() {
               params.data[params.colDef.field] = parseEditValue(params.newValue, params.oldValue)
               return true
             },
-            cellRenderer: DraggableCell
+            cellRenderer: (props: { value: unknown; data?: Record<string, unknown>; colDef: { field?: string } }) => {
+              // Add row _id: show insert/cancel controls
+              if (props.data?.__isAddRow && props.colDef?.field === '_id') {
+                return (
+                  <span className="flex items-center gap-1">
+                    <button
+                      className="rounded px-1.5 py-0.5 text-[11px] text-emerald-400 hover:bg-emerald-500/20"
+                      onClick={(e) => { e.stopPropagation(); handleAddRowSubmit() }}
+                    >
+                      <Check className="inline h-3 w-3 mr-0.5" />Insert
+                    </button>
+                    <button
+                      className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent"
+                      onClick={(e) => { e.stopPropagation(); setAddRowOpen(false); setAddRowValues({}) }}
+                    >
+                      <X className="inline h-3 w-3 mr-0.5" />Cancel
+                    </button>
+                  </span>
+                )
+              }
+              // Add row other fields: show placeholder when empty
+              if (props.data?.__isAddRow) {
+                const val = props.value
+                if (val === null || val === undefined || val === '') {
+                  const fieldType = fieldTypes[props.colDef?.field || ''] || ''
+                  return <span className="text-muted-foreground/40 italic text-xs">click to edit{fieldType ? ` (${fieldType})` : ''}</span>
+                }
+              }
+              return <DraggableCell value={props.value} colDef={props.colDef as { field?: string }} />
+            }
           }
         })
       })()
@@ -248,6 +292,53 @@ export function DocumentTable() {
     } catch (err) {
       alert(`Failed to delete: ${err instanceof Error ? err.message : err}`)
     }
+  }
+
+  // Inline add row (pinned bottom row in AG Grid)
+  const [addRowOpen, setAddRowOpen] = useState(false)
+  const [addRowValues, setAddRowValues] = useState<Record<string, string>>({})
+  const [addRowSaving, setAddRowSaving] = useState(false)
+
+  const rowData = addRowOpen
+    ? [...documents, { _id: '__new__', __isAddRow: true, ...addRowValues }]
+    : documents
+
+  const handleAddRowSubmit = async () => {
+    if (!tab || addRowSaving) return
+    const allFields = Object.keys(addRowValues).filter((k) => k !== '_id' && k !== '__isAddRow')
+    setAddRowSaving(true)
+    try {
+      const doc: Record<string, unknown> = {}
+      for (const key of allFields) {
+        const raw = addRowValues[key]
+        if (raw === undefined || raw === '') continue
+        const type = fieldTypes[key] || 'String'
+        doc[key] = parseEditValue(raw, type === 'Number' ? 0 : type === 'Boolean' ? true : '')
+      }
+      if (Object.keys(doc).length === 0) {
+        setAddRowOpen(false)
+        return
+      }
+      await trpc.mutation.insertOne.mutate({
+        database: tab.database,
+        collection: tab.collection,
+        document: doc
+      })
+      setAddRowOpen(false)
+      setAddRowValues({})
+      executeQuery()
+    } catch (err) {
+      alert(`Failed to insert: ${err instanceof Error ? err.message : err}`)
+    } finally {
+      setAddRowSaving(false)
+    }
+  }
+
+  const onPinnedCellEditingStopped = (event: CellEditingStoppedEvent) => {
+    if (!event.data?.__isAddRow) return
+    const field = event.colDef.field
+    if (!field || field === '_id') return
+    setAddRowValues((prev) => ({ ...prev, [field]: event.newValue ?? '' }))
   }
 
   return (
@@ -358,23 +449,44 @@ export function DocumentTable() {
                 <AgGridReact
                   ref={gridRef}
                   theme={effectiveTheme === 'dark' ? gridDarkTheme : gridLightTheme}
-                  rowData={documents}
+                  rowData={rowData}
                   columnDefs={columnDefs}
-                  onRowClicked={(e) => selectDocument(e.data)}
-                  onCellEditingStopped={onCellEditingStopped}
+                  onRowClicked={(e) => {
+                    if (e.data?.__isAddRow) return
+                    selectDocument(e.data)
+                  }}
+                  onCellEditingStopped={(e) => {
+                    if (e.data?.__isAddRow) {
+                      const field = e.colDef.field
+                      if (field && field !== '_id') {
+                        setAddRowValues((prev) => ({ ...prev, [field]: e.newValue ?? '' }))
+                      }
+                    } else {
+                      onCellEditingStopped(e)
+                    }
+                  }}
                   onCellContextMenu={(e) => {
+                    if (e.data?.__isAddRow) return
                     setContextDoc(e.data)
                     setContextCell(e.colDef.field ? { field: e.colDef.field, value: e.value } : null)
                   }}
                   rowSelection={{ mode: 'multiRow', enableClickSelection: false, checkboxes: true, headerCheckbox: true }}
                   onSelectionChanged={(e) => {
-                    const ids = e.api.getSelectedRows().map((r: Record<string, unknown>) => r._id)
+                    const ids = e.api.getSelectedRows()
+                      .filter((r: Record<string, unknown>) => !r.__isAddRow)
+                      .map((r: Record<string, unknown>) => r._id)
                     setSelectedDocIds(ids)
                   }}
                   singleClickEdit={false}
                   enableCellTextSelection={true}
                   suppressContextMenu
                   getRowId={(params) => params.data._id ? String(params.data._id) : String(params.rowIndex)}
+                  getRowStyle={(params) => {
+                    if (params.data?.__isAddRow) {
+                      return { fontStyle: 'italic', background: 'rgba(16, 185, 129, 0.05)' }
+                    }
+                    return undefined
+                  }}
                 />
               </div>
             </ContextMenu.Trigger>
@@ -464,6 +576,19 @@ export function DocumentTable() {
           </ScrollArea>
         )}
       </div>
+
+      {/* Add document button */}
+      {!tab.isView && !addRowOpen && (
+        <div className="border-t border-border">
+          <button
+            className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            onClick={() => setAddRowOpen(true)}
+          >
+            <Plus className="h-3 w-3" />
+            Add document...
+          </button>
+        </div>
+      )}
     </div>
   )
 }
