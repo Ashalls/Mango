@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -172,6 +172,19 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
                   Chat with Claude...
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                  onSelect={async () => {
+                    try {
+                      await trpc.mongosh.open.mutate({ connectionId, database: db.name })
+                    } catch (err) {
+                      alert(`Failed to open mongosh: ${err instanceof Error ? err.message : err}`)
+                    }
+                  }}
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  Open mongosh
                 </ContextMenu.Item>
                 {onCopyDatabase && (
                   <ContextMenu.Item
@@ -390,6 +403,19 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                       >
                         <FileUp className="h-3.5 w-3.5" />
                         Insert Documents...
+                      </ContextMenu.Item>
+                      <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                        onSelect={async () => {
+                          try {
+                            await trpc.mongosh.open.mutate({ connectionId, database: db.name, collection: col.name })
+                          } catch (err) {
+                            alert(`Failed to open mongosh: ${err instanceof Error ? err.message : err}`)
+                          }
+                        }}
+                      >
+                        <Terminal className="h-3.5 w-3.5" />
+                        Open mongosh
                       </ContextMenu.Item>
                       <ContextMenu.Separator className="my-1 h-px bg-border" />
                       <ContextMenu.Item

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Trash2, Download, Plus, Pencil } from 'lucide-react'
+import { Trash2, Download, Plus, Pencil, Terminal } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
@@ -79,6 +79,25 @@ export function BulkToolbar() {
           onClick={() => setUpdateOpen(true)}
         >
           <Pencil className="mr-1 h-3 w-3" /> Update Many
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs text-amber-400 hover:text-amber-300 ml-auto"
+          onClick={async () => {
+            if (!activeTab) return
+            try {
+              await trpc.mongosh.open.mutate({
+                connectionId: activeTab.connectionId,
+                database: activeTab.database,
+                collection: activeTab.collection
+              })
+            } catch (err) {
+              alert(`Failed to open mongosh: ${err instanceof Error ? err.message : err}`)
+            }
+          }}
+        >
+          <Terminal className="mr-1 h-3 w-3" /> mongosh
         </Button>
       </div>
 
