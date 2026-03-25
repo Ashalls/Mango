@@ -24,8 +24,12 @@ export function playHiss() {
 }
 
 export function CatMode() {
+  const loaded = useSettingsStore((s) => s.loaded)
+  const catSounds = useSettingsStore((s) => s.catSounds)
+
   useEffect(() => {
-    if (!useSettingsStore.getState().catSounds) return
+    if (!loaded) return
+    if (!catSounds) return
     const timer = setTimeout(() => {
       try {
         const audio = new Audio(meowSound)
@@ -34,7 +38,7 @@ export function CatMode() {
       } catch {}
     }, 500)
     return () => clearTimeout(timer)
-  }, [])
+  }, [loaded])
 
   return null
 }
