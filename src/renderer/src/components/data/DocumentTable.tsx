@@ -3,8 +3,10 @@ import { AgGridReact } from 'ag-grid-react'
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community'
 import type { CellEditingStoppedEvent } from 'ag-grid-community'
 import {
+  ChevronsLeft,
   ChevronLeft,
   ChevronRight,
+  ChevronsRight,
   RefreshCw,
   Loader2,
   Table2,
@@ -289,12 +291,18 @@ export function DocumentTable() {
               <option key={n} value={n}>{n} rows</option>
             ))}
           </select>
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled={tab.page === 0} onClick={() => setPage(0)}>
+            <ChevronsLeft className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" disabled={tab.page === 0} onClick={() => setPage(tab.page - 1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="text-sm text-muted-foreground">{tab.page + 1} / {Math.max(totalPages, 1)}</span>
           <Button variant="ghost" size="icon" className="h-8 w-8" disabled={tab.page >= totalPages - 1} onClick={() => setPage(tab.page + 1)}>
             <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled={tab.page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
+            <ChevronsRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
