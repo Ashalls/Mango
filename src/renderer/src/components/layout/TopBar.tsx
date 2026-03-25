@@ -4,7 +4,7 @@ import { Button } from '@renderer/components/ui/button'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useClaudeStore } from '@renderer/store/claudeStore'
-import { useThemeStore } from '@renderer/store/themeStore'
+import { useSettingsStore } from '@renderer/store/settingsStore'
 
 export function TopBar() {
   const activeConnection = useConnectionStore((s) => s.activeConnection)
@@ -13,7 +13,7 @@ export function TopBar() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const togglePanel = useClaudeStore((s) => s.togglePanel)
   const isPanelOpen = useClaudeStore((s) => s.isPanelOpen)
-  const { theme, setTheme } = useThemeStore()
+  const { theme, setTheme } = useSettingsStore()
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
 
   useEffect(() => {

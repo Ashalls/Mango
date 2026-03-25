@@ -3,10 +3,12 @@ import { trpc } from '@renderer/lib/trpc'
 
 type Theme = 'light' | 'dark' | 'system'
 
-interface ThemeStore {
+interface SettingsStore {
   theme: Theme
   loaded: boolean
+  catSounds: boolean
   setTheme: (theme: Theme) => void
+  setCatSounds: (enabled: boolean) => void
   loadFromSettings: () => Promise<void>
   getEffectiveTheme: () => 'light' | 'dark'
 }
@@ -20,27 +22,37 @@ function applyTheme(theme: Theme): void {
   document.documentElement.classList.toggle('light', effective === 'light')
 }
 
-export const useThemeStore = create<ThemeStore>((set, get) => ({
+export const useSettingsStore = create<SettingsStore>((set, get) => ({
   theme: 'dark',
   loaded: false,
+  catSounds: true,
 
   setTheme: (theme) => {
     applyTheme(theme)
     set({ theme })
-    // Persist to settings file via main process
     trpc.settings.set.mutate({ key: 'theme', value: theme }).catch(() => {})
+  },
+
+  setCatSounds: (enabled) => {
+    set({ catSounds: enabled })
+    trpc.settings.set.mutate({ key: 'catSounds', value: enabled }).catch(() => {})
   },
 
   loadFromSettings: async () => {
     try {
-      const saved = await trpc.settings.get.query({ key: 'theme' }) as Theme | null
-      if (saved && ['light', 'dark', 'system'].includes(saved)) {
-        applyTheme(saved)
-        set({ theme: saved, loaded: true })
-        return
+      const [savedTheme, savedCatSounds] = await Promise.all([
+        trpc.settings.get.query({ key: 'theme' }) as Promise<Theme | null>,
+        trpc.settings.get.query({ key: 'catSounds' }) as Promise<boolean | null>
+      ])
+      if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
+        applyTheme(savedTheme)
+        set({ theme: savedTheme })
+      }
+      if (savedCatSounds !== null && savedCatSounds !== undefined) {
+        set({ catSounds: savedCatSounds })
       }
     } catch { /* tRPC not ready yet */ }
-    applyTheme('dark')
+    applyTheme(get().theme)
     set({ loaded: true })
   },
 
@@ -58,7 +70,7 @@ applyTheme('dark')
 
 // Listen for system theme changes
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (useThemeStore.getState().theme === 'system') {
+  if (useSettingsStore.getState().theme === 'system') {
     applyTheme('system')
   }
 })

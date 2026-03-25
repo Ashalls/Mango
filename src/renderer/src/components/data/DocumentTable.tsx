@@ -17,7 +17,7 @@ import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { useTabStore } from '@renderer/store/tabStore'
-import { useThemeStore } from '@renderer/store/themeStore'
+import { useSettingsStore } from '@renderer/store/settingsStore'
 import { trpc } from '@renderer/lib/trpc'
 
 ModuleRegistry.registerModules([AllCommunityModule])
@@ -145,7 +145,7 @@ function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
 export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
-  const themeMode = useThemeStore((s) => s.theme)
+  const themeMode = useSettingsStore((s) => s.theme)
   const effectiveTheme = themeMode === 'system'
     ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : themeMode

@@ -3,13 +3,13 @@ import { useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
-import { useThemeStore } from '@renderer/store/themeStore'
+import { useSettingsStore } from '@renderer/store/settingsStore'
 import { trpc } from '@renderer/lib/trpc'
 
 export function DocumentEditor() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setEditorContent, clearDocument, executeQuery } = useTabStore()
-  const themeMode = useThemeStore((s) => s.theme)
+  const themeMode = useSettingsStore((s) => s.theme)
   const effectiveTheme = themeMode === 'system'
     ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : themeMode
