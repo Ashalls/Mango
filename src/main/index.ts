@@ -101,6 +101,11 @@ app.whenReady().then(async () => {
   const splash = createSplashWindow()
   const splashStart = Date.now()
 
+  // Set version on splash screen
+  splash.webContents.executeJavaScript(
+    `document.getElementById("version").innerText = "v${app.getVersion()}"`
+  )
+
   // Check for updates during splash (production only)
   if (!is.dev) {
     autoUpdater.autoDownload = true

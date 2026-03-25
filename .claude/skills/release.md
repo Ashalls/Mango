@@ -42,4 +42,5 @@ Execute these steps in order to create a proper release for the Mango Electron a
 ## Important
 
 - The `latest.yml` and `.blockmap` files MUST be uploaded — without them, electron-updater auto-update will not work.
+- The splash screen version is set dynamically from `app.getVersion()` (which reads `package.json`), so bumping `package.json` is sufficient — no need to edit `resources/splash.html`.
 - Ask the user for release notes or generate them from commits since the last tag.
