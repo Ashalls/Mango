@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Database, MessageSquare, Plug, PlugZap, Sun, Moon, Monitor } from 'lucide-react'
+import { Database, MessageSquare, Plug, PlugZap, Sun, Moon, Monitor, Settings } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
+import { Popover, PopoverTrigger, PopoverContent } from '@renderer/components/ui/popover'
+import { Switch } from '@renderer/components/ui/switch'
+import { cn } from '@renderer/lib/utils'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useClaudeStore } from '@renderer/store/claudeStore'
@@ -13,7 +16,7 @@ export function TopBar() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const togglePanel = useClaudeStore((s) => s.togglePanel)
   const isPanelOpen = useClaudeStore((s) => s.isPanelOpen)
-  const { theme, setTheme } = useSettingsStore()
+  const { theme, setTheme, catSounds, setCatSounds } = useSettingsStore()
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
 
   useEffect(() => {
@@ -28,17 +31,6 @@ export function TopBar() {
 
   const activeProfile = profiles.find((p) => p.id === activeConnection?.profileId)
   const isConnected = activeConnection?.status === 'connected'
-
-  const cycleTheme = () => {
-    const next = theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark'
-    setTheme(next)
-  }
-
-  const themeIcon = theme === 'dark'
-    ? <Moon className="h-4 w-4" />
-    : theme === 'light'
-      ? <Sun className="h-4 w-4" />
-      : <Monitor className="h-4 w-4" />
 
   return (
     <div className="flex h-12 items-center justify-between border-b border-border bg-background px-4">
@@ -91,15 +83,61 @@ export function TopBar() {
             </button>
           </div>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={cycleTheme}
-          title={`Theme: ${theme}`}
-        >
-          {themeIcon}
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              title="Settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64">
+            <div className="space-y-4">
+              <h4 className="text-sm font-medium">Settings</h4>
+
+              {/* Theme selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Theme</label>
+                <div className="flex gap-1 rounded-md bg-muted p-1">
+                  {([
+                    { value: 'light' as const, icon: Sun, label: 'Light' },
+                    { value: 'dark' as const, icon: Moon, label: 'Dark' },
+                    { value: 'system' as const, icon: Monitor, label: 'System' }
+                  ]).map(({ value, icon: Icon, label }) => (
+                    <button
+                      key={value}
+                      className={cn(
+                        'flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors',
+                        theme === value
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                      onClick={() => setTheme(value)}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cat sounds toggle */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <label className="text-sm">Cat Sounds</label>
+                  <p className="text-xs text-muted-foreground">Meow, purr & hiss effects</p>
+                </div>
+                <Switch
+                  checked={catSounds}
+                  onCheckedChange={setCatSounds}
+                />
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
         <Button
           variant={isPanelOpen ? 'secondary' : 'ghost'}
           size="sm"
