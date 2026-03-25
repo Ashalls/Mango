@@ -1,6 +1,6 @@
 {
   "name": "mango",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Mango — AI-Native MongoDB Client",
   "main": "./out/main/index.js",
   "scripts": {
