@@ -154,6 +154,9 @@ export function DocumentTable() {
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [contextDoc, setContextDoc] = useState<Record<string, unknown> | null>(null)
   const [contextCell, setContextCell] = useState<{ field: string; value: unknown } | null>(null)
+  const [editingPage, setEditingPage] = useState(false)
+  const [pageInput, setPageInput] = useState('')
+  const pageInputRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<AgGridReact>(null)
 
   if (!tab) return null
@@ -297,7 +300,47 @@ export function DocumentTable() {
           <Button variant="ghost" size="icon" className="h-8 w-8" disabled={tab.page === 0} onClick={() => setPage(tab.page - 1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm text-muted-foreground">{tab.page + 1} / {Math.max(totalPages, 1)}</span>
+          {editingPage ? (
+            <input
+              ref={pageInputRef}
+              type="number"
+              className="h-6 w-16 rounded border border-input bg-transparent px-1.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={pageInput}
+              min={1}
+              max={Math.max(totalPages, 1)}
+              autoFocus
+              onChange={(e) => setPageInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = parseInt(pageInput, 10)
+                  if (!isNaN(val) && val >= 1 && val <= Math.max(totalPages, 1)) {
+                    setPage(val - 1)
+                  }
+                  setEditingPage(false)
+                } else if (e.key === 'Escape') {
+                  setEditingPage(false)
+                }
+              }}
+              onBlur={() => {
+                const val = parseInt(pageInput, 10)
+                if (!isNaN(val) && val >= 1 && val <= Math.max(totalPages, 1)) {
+                  setPage(val - 1)
+                }
+                setEditingPage(false)
+              }}
+            />
+          ) : (
+            <button
+              className="cursor-pointer rounded px-1.5 py-0.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              onClick={() => {
+                setPageInput(String(tab.page + 1))
+                setEditingPage(true)
+              }}
+              title="Click to go to a specific page"
+            >
+              {tab.page + 1} / {Math.max(totalPages, 1)}
+            </button>
+          )}
           <Button variant="ghost" size="icon" className="h-8 w-8" disabled={tab.page >= totalPages - 1} onClick={() => setPage(tab.page + 1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -307,7 +350,7 @@ export function DocumentTable() {
         </div>
       </div>
       {/* Content */}
-      <div className="flex-1">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {viewMode === 'table' ? (
           <ContextMenu.Root>
             <ContextMenu.Trigger className="h-full w-full" asChild>
