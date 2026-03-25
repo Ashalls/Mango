@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
@@ -10,12 +10,22 @@ interface FieldRow {
   direction: string
 }
 
+export interface EditIndexInfo {
+  name: string
+  key: Record<string, number | string>
+  unique?: boolean
+  sparse?: boolean
+  expireAfterSeconds?: number
+}
+
 interface CreateIndexDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   database: string
   collection: string
   onCreated: () => void
+  /** If provided, dialog opens in edit mode — pre-filled, drops old index on save */
+  editIndex?: EditIndexInfo
 }
 
 export function CreateIndexDialog({
@@ -23,8 +33,10 @@ export function CreateIndexDialog({
   onOpenChange,
   database,
   collection,
-  onCreated
+  onCreated,
+  editIndex
 }: CreateIndexDialogProps) {
+  const isEdit = !!editIndex
   const [fields, setFields] = useState<FieldRow[]>([{ name: '', direction: '1' }])
   const [unique, setUnique] = useState(false)
   const [sparse, setSparse] = useState(false)
@@ -32,6 +44,22 @@ export function CreateIndexDialog({
   const [customName, setCustomName] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Pre-fill when editing
+  useEffect(() => {
+    if (editIndex && open) {
+      setFields(
+        Object.entries(editIndex.key).map(([name, dir]) => ({
+          name,
+          direction: String(dir)
+        }))
+      )
+      setUnique(editIndex.unique || false)
+      setSparse(editIndex.sparse || false)
+      setTtl(editIndex.expireAfterSeconds !== undefined ? String(editIndex.expireAfterSeconds) : '')
+      setCustomName(editIndex.name === '_id_' ? '' : editIndex.name)
+    }
+  }, [editIndex, open])
 
   const addField = () => {
     setFields([...fields, { name: '', direction: '1' }])
@@ -79,6 +107,15 @@ export function CreateIndexDialog({
       if (ttl.trim() && Number(ttl) > 0) options.expireAfterSeconds = Number(ttl)
       if (customName.trim()) options.name = customName.trim()
 
+      // In edit mode, drop the old index first
+      if (isEdit && editIndex) {
+        try {
+          await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
+        } catch {
+          // Old index may already be gone
+        }
+      }
+
       await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
       resetForm()
       onCreated()
@@ -98,7 +135,7 @@ export function CreateIndexDialog({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-6 shadow-xl">
           <div className="mb-4 flex items-center justify-between">
-            <Dialog.Title className="text-lg font-semibold">Create Index</Dialog.Title>
+            <Dialog.Title className="text-lg font-semibold">{isEdit ? 'Edit Index' : 'Create Index'}</Dialog.Title>
             <Dialog.Close asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <X className="h-4 w-4" />
@@ -209,7 +246,7 @@ export function CreateIndexDialog({
               <Button variant="outline">Cancel</Button>
             </Dialog.Close>
             <Button onClick={handleCreate} disabled={!canCreate || creating}>
-              {creating ? 'Creating...' : 'Create Index'}
+              {creating ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Index' : 'Create Index')}
             </Button>
           </div>
         </Dialog.Content>

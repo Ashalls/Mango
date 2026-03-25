@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, RefreshCw, Trash2, Loader2 } from 'lucide-react'
+import { Plus, RefreshCw, Trash2, Loader2, Pencil } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
-import { CreateIndexDialog } from './CreateIndexDialog'
+import { CreateIndexDialog, type EditIndexInfo } from './CreateIndexDialog'
 
 interface IndexInfo {
   name: string
@@ -54,6 +54,7 @@ export function IndexPanel() {
   const [stats, setStats] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<EditIndexInfo | undefined>(undefined)
 
   const database = activeTab?.database ?? ''
   const collection = activeTab?.collection ?? ''
@@ -191,17 +192,39 @@ export function IndexPanel() {
                       {usage !== undefined ? usage.toLocaleString() : '-'}
                     </td>
                     <td className="px-4 py-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => handleDrop(idx.name)}
-                        disabled={idx.name === '_id_'}
-                        title={idx.name === '_id_' ? 'Cannot drop the _id index' : `Drop ${idx.name}`}
-                      >
-                        <Trash2 className="mr-1 h-3 w-3" />
-                        Drop
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+                          onClick={() => {
+                            setEditingIndex({
+                              name: idx.name,
+                              key: idx.key,
+                              unique: idx.unique,
+                              sparse: idx.sparse,
+                              expireAfterSeconds: idx.expireAfterSeconds
+                            })
+                            setCreateDialogOpen(true)
+                          }}
+                          disabled={idx.name === '_id_'}
+                          title={idx.name === '_id_' ? 'Cannot edit the _id index' : `Edit ${idx.name}`}
+                        >
+                          <Pencil className="mr-1 h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDrop(idx.name)}
+                          disabled={idx.name === '_id_'}
+                          title={idx.name === '_id_' ? 'Cannot drop the _id index' : `Drop ${idx.name}`}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" />
+                          Drop
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -214,10 +237,14 @@ export function IndexPanel() {
       {/* Create dialog */}
       <CreateIndexDialog
         open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
+        onOpenChange={(o) => {
+          setCreateDialogOpen(o)
+          if (!o) setEditingIndex(undefined)
+        }}
         database={database}
         collection={collection}
         onCreated={fetchIndexes}
+        editIndex={editingIndex}
       />
     </div>
   )
