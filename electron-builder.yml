@@ -38,9 +38,18 @@ nsis:
   shortcutName: Mango
   uninstallDisplayName: Mango
 mac:
+  icon: resources/icon.png
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   target:
     - dmg
+    - zip
+  artifactName: Mango-${version}-mac.${ext}
+dmg:
+  artifactName: Mango-${version}.${ext}
 linux:
   target:
     - AppImage
