@@ -111,22 +111,32 @@ app.whenReady().then(async () => {
   if (!is.dev) {
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.logger = console
+    let splashAlive = true
     autoUpdater.on('update-available', () => {
-      splash.webContents.executeJavaScript(
-        'document.getElementById("status").innerHTML = "Downloading update<span class=\\"dot\\">.</span><span class=\\"dot\\">.</span><span class=\\"dot\\">.</span>"'
-      )
+      if (splashAlive) {
+        splash.webContents.executeJavaScript(
+          'document.getElementById("status").innerHTML = "Downloading update<span class=\\"dot\\">.</span><span class=\\"dot\\">.</span><span class=\\"dot\\">.</span>"'
+        )
+      }
     })
     autoUpdater.on('update-not-available', () => {
-      splash.webContents.executeJavaScript(
-        'document.getElementById("status").innerText = "Up to date!"'
-      )
+      if (splashAlive) {
+        splash.webContents.executeJavaScript(
+          'document.getElementById("status").innerText = "Up to date!"'
+        )
+      }
     })
-    autoUpdater.on('error', () => {
-      splash.webContents.executeJavaScript(
-        'document.getElementById("status").innerText = "Starting..."'
-      )
+    autoUpdater.on('error', (err) => {
+      console.error('Auto-updater error:', err)
+      if (splashAlive) {
+        splash.webContents.executeJavaScript(
+          'document.getElementById("status").innerText = "Starting..."'
+        )
+      }
     })
-    autoUpdater.checkForUpdates().catch(() => {})
+    splash.on('closed', () => { splashAlive = false })
+    autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
   }
 
   // Start MCP server while splash is showing
@@ -160,13 +170,14 @@ app.whenReady().then(async () => {
         // Replace all previous listeners with the main window notification
         autoUpdater.removeAllListeners('update-downloaded')
         autoUpdater.on('update-downloaded', (info) => {
+          console.log('Update downloaded:', info.version)
           mainWindow.webContents.send('update:downloaded', { version: info.version })
         })
         // If an update was already downloaded during splash, notify immediately
         // Otherwise check again now (splash check may have started download)
-        autoUpdater.checkForUpdates().catch(() => {})
+        autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
         // Re-check every 30 minutes
-        setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 30 * 60 * 1000)
+        setInterval(() => autoUpdater.checkForUpdates().catch((err) => console.error('Update re-check failed:', err)), 30 * 60 * 1000)
       }
     }, remaining)
   })
