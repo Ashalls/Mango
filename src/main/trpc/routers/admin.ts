@@ -23,6 +23,13 @@ export const adminRouter = router({
       return { created: true }
     }),
 
+  renameCollection: procedure
+    .input(z.object({ database: z.string(), oldName: z.string(), newName: z.string() }))
+    .mutation(async ({ input }) => {
+      await adminActions.renameCollection(input.database, input.oldName, input.newName)
+      return { renamed: true }
+    }),
+
   listIndexes: procedure
     .input(z.object({ database: z.string(), collection: z.string() }))
     .query(async ({ input }) => {

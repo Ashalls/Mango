@@ -209,6 +209,20 @@ export function registerTools(server: McpServer): void {
     return { content: [{ type: 'text', text: `Dropped index: ${indexName}` }] }
   })
 
+  server.registerTool('mongo_rename_collection', {
+    description: 'Rename a collection. BLOCKED on readonly connections.',
+    inputSchema: {
+      database: z.string().describe('Database name'),
+      oldName: z.string().describe('Current collection name'),
+      newName: z.string().describe('New collection name')
+    }
+  }, async ({ database, oldName, newName }) => {
+    const blocked = checkWriteAccess(database)
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    await adminActions.renameCollection(database, oldName, newName)
+    return { content: [{ type: 'text', text: `Renamed collection "${oldName}" to "${newName}" in database "${database}"` }] }
+  })
+
   // --- Query tools (always read-only) ---
   server.registerTool('mongo_find', {
     description: 'Find documents in a collection with optional filter, projection, sort, skip, and limit',

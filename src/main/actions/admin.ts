@@ -48,6 +48,15 @@ export async function dropIndex(
   await db.collection(collection).dropIndex(indexName)
 }
 
+export async function renameCollection(
+  database: string,
+  oldName: string,
+  newName: string
+): Promise<void> {
+  const db = mongoService.getDb(database)
+  await db.renameCollection(oldName, newName)
+}
+
 export async function getIndexStats(
   database: string,
   collection: string

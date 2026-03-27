@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal, Pencil } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -29,6 +29,8 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
   const [newCollInput, setNewCollInput] = useState('')
+  const [renameTarget, setRenameTarget] = useState<{ db: string; col: string } | null>(null)
+  const [renameInput, setRenameInput] = useState('')
   const [insertTarget, setInsertTarget] = useState<{ db: string; col: string } | null>(null)
   const {
     collections,
@@ -111,6 +113,23 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       await loadCollections(dbName)
     } catch (err) {
       alert(`Failed to create collection: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  const handleRenameCollection = async (dbName: string, oldName: string) => {
+    const newName = renameInput.trim()
+    if (!newName || newName === oldName) {
+      setRenameTarget(null)
+      setRenameInput('')
+      return
+    }
+    try {
+      await trpc.admin.renameCollection.mutate({ database: dbName, oldName, newName })
+      setRenameTarget(null)
+      setRenameInput('')
+      await loadCollections(dbName)
+    } catch (err) {
+      alert(`Failed to rename collection: ${err instanceof Error ? err.message : err}`)
     }
   }
 
@@ -333,6 +352,25 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
               {regularCollections.map((col) => (
                 <ContextMenu.Root key={col.name}>
                   <ContextMenu.Trigger asChild>
+                    {renameTarget?.db === db.name && renameTarget?.col === col.name ? (
+                      <div className="flex w-full items-center gap-1.5 rounded-md px-2 py-1">
+                        <Table2 className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                        <input
+                          className="h-5 flex-1 rounded border border-input bg-transparent px-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                          value={renameInput}
+                          onChange={(e) => setRenameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRenameCollection(db.name, col.name)
+                            if (e.key === 'Escape') {
+                              setRenameTarget(null)
+                              setRenameInput('')
+                            }
+                          }}
+                          onBlur={() => handleRenameCollection(db.name, col.name)}
+                          autoFocus
+                        />
+                      </div>
+                    ) : (
                     <button
                       className={cn(
                         'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm hover:bg-sidebar-accent',
@@ -349,6 +387,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         </span>
                       )}
                     </button>
+                    )}
                   </ContextMenu.Trigger>
                   <ContextMenu.Portal>
                     <ContextMenu.Content className="min-w-[160px] rounded-md border border-border bg-popover p-1 text-sm shadow-md">
@@ -416,6 +455,16 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         Open mongosh
                       </ContextMenu.Item>
                       <ContextMenu.Separator className="my-1 h-px bg-border" />
+                      <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                        onSelect={() => {
+                          setRenameTarget({ db: db.name, col: col.name })
+                          setRenameInput(col.name)
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Rename Collection
+                      </ContextMenu.Item>
                       <ContextMenu.Item
                         className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none hover:bg-destructive/10"
                         onSelect={() => handleDropCollection(db.name, col.name)}
