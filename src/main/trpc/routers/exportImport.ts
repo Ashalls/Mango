@@ -3,6 +3,15 @@ import * as exportImportActions from '../../actions/exportImport'
 import * as migrationActions from '../../actions/migration'
 
 export const exportImportRouter = router({
+  listCollections: procedure
+    .input(z.object({
+      connectionId: z.string(),
+      database: z.string()
+    }))
+    .query(async ({ input }) => {
+      return exportImportActions.listDatabaseCollections(input.connectionId, input.database)
+    }),
+
   exportCollection: procedure
     .input(z.object({
       database: z.string(),
@@ -16,20 +25,22 @@ export const exportImportRouter = router({
   exportDatabaseDump: procedure
     .input(z.object({
       connectionId: z.string(),
-      database: z.string()
+      database: z.string(),
+      collections: z.array(z.string()).optional()
     }))
     .mutation(async ({ input }) => {
-      return exportImportActions.exportDatabaseDump(input.connectionId, input.database)
+      return exportImportActions.exportDatabaseDump(input.connectionId, input.database, input.collections)
     }),
 
   importDatabaseDump: procedure
     .input(z.object({
       connectionId: z.string(),
       database: z.string(),
-      dropExisting: z.boolean().default(false)
+      dropExisting: z.boolean().default(false),
+      collections: z.array(z.string()).optional()
     }))
     .mutation(async ({ input }) => {
-      return exportImportActions.importDatabaseDump(input.connectionId, input.database, input.dropExisting)
+      return exportImportActions.importDatabaseDump(input.connectionId, input.database, input.dropExisting, input.collections)
     }),
 
   pickDumpFolder: procedure
@@ -42,11 +53,12 @@ export const exportImportRouter = router({
       connectionId: z.string(),
       importDir: z.string(),
       targetDatabase: z.string(),
-      dropTarget: z.boolean()
+      dropTarget: z.boolean(),
+      collections: z.array(z.string()).optional()
     }))
     .mutation(async ({ input }) => {
       return exportImportActions.importDatabaseFromDump(
-        input.connectionId, input.importDir, input.targetDatabase, input.dropTarget
+        input.connectionId, input.importDir, input.targetDatabase, input.dropTarget, input.collections
       )
     }),
 

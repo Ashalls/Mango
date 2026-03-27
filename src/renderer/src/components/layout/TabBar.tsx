@@ -2,9 +2,11 @@ import { X, Table2, Eye, Database, MessageSquare } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useTabStore } from '@renderer/store/tabStore'
+import { useConnectionStore } from '@renderer/store/connectionStore'
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useTabStore()
+  const profiles = useConnectionStore((s) => s.profiles)
 
   if (tabs.length === 0) return null
 
@@ -44,6 +46,13 @@ export function TabBar() {
               )}
               onClick={() => setActiveTab(tab.id)}
             >
+              {(() => {
+                const profile = profiles.find((p) => p.id === tab.connectionId)
+                const connColor = profile?.color
+                return connColor ? (
+                  <div className="h-full w-0.5 shrink-0 rounded-full" style={{ backgroundColor: connColor }} />
+                ) : null
+              })()}
               {tab.scope === 'connection'
                 ? <MessageSquare className="h-3 w-3 shrink-0 text-emerald-400" />
                 : tab.scope === 'database'
@@ -52,13 +61,13 @@ export function TabBar() {
                     ? <Eye className="h-3 w-3 shrink-0 text-purple-400" />
                     : <Table2 className="h-3 w-3 shrink-0 text-blue-400" />
               }
-              <span className="truncate max-w-[120px]" title={
-                tab.scope === 'connection'
-                  ? tab.label
-                  : tab.scope === 'database'
-                    ? tab.database
-                    : `${tab.database}.${tab.collection}`
-              }>
+              <span className="truncate max-w-[120px]" title={(() => {
+                const profile = profiles.find((p) => p.id === tab.connectionId)
+                const connName = profile?.name || ''
+                if (tab.scope === 'connection') return tab.label
+                if (tab.scope === 'database') return `${tab.database} (${connName})`
+                return `${tab.database}.${tab.collection} (${connName})`
+              })()}>
                 {tab.label}
               </span>
               {tab.scope === 'collection' && (

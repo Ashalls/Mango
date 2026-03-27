@@ -7,9 +7,9 @@ export const explorerRouter = router({
   }),
 
   listCollections: procedure
-    .input(z.object({ database: z.string() }))
+    .input(z.object({ database: z.string(), connectionId: z.string().optional() }))
     .query(async ({ input }) => {
-      return explorerActions.listCollections(input.database)
+      return explorerActions.listCollections(input.database, input.connectionId)
     }),
 
   collectionSchema: procedure

@@ -10,7 +10,7 @@ interface ExplorerStore {
   loading: boolean
 
   loadDatabases: () => Promise<void>
-  loadCollections: (database: string) => Promise<void>
+  loadCollections: (database: string, connectionId?: string) => Promise<void>
   selectDatabase: (database: string) => void
   selectCollection: (database: string, collection: string) => void
   clear: () => void
@@ -33,10 +33,11 @@ export const useExplorerStore = create<ExplorerStore>((set, get) => ({
     }
   },
 
-  loadCollections: async (database) => {
-    const collections = await trpc.explorer.listCollections.query({ database })
+  loadCollections: async (database, connectionId) => {
+    const collections = await trpc.explorer.listCollections.query({ database, connectionId })
+    const key = connectionId ? `${connectionId}:${database}` : database
     set((state) => ({
-      collections: { ...state.collections, [database]: collections }
+      collections: { ...state.collections, [key]: collections }
     }))
   },
 

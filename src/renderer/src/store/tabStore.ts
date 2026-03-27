@@ -67,6 +67,7 @@ interface TabStore {
 
   // Tab management
   openTab: (connectionId: string, database: string, collection: string, isView?: boolean) => void
+  openNewTab: (connectionId: string, database: string, collection: string, isView?: boolean) => void
   openDatabaseTab: (connectionId: string, database: string) => void
   openConnectionTab: (connectionId: string, connectionName: string) => void
   closeTab: (tabId: string) => void
@@ -111,18 +112,34 @@ export const useTabStore = create<TabStore>((set, get) => ({
   activeTabId: null,
 
   openTab: (connectionId, database, collection, isView = false) => {
-    const id = `${connectionId}:${database}:${collection}`
-    const existing = get().tabs.find((t) => t.id === id)
+    const baseId = `${connectionId}:${database}:${collection}`
+    const existing = get().tabs.find((t) => t.id === baseId)
     if (existing) {
-      set({ activeTabId: id })
+      set({ activeTabId: baseId })
       return
     }
     const tab = createTab(connectionId, database, collection, isView)
     set((state) => ({
       tabs: [...state.tabs, tab],
-      activeTabId: id
+      activeTabId: tab.id
     }))
     // Auto-execute query for new tab
+    get().executeQuery()
+    get().saveTabs()
+  },
+
+  openNewTab: (connectionId, database, collection, isView = false) => {
+    const baseId = `${connectionId}:${database}:${collection}`
+    const existingCount = get().tabs.filter((t) => t.id === baseId || t.id.startsWith(baseId + '::')).length
+    const tab = createTab(connectionId, database, collection, isView)
+    if (existingCount > 0) {
+      tab.id = `${baseId}::${existingCount + 1}`
+      tab.label = `${collection} (${existingCount + 1})`
+    }
+    set((state) => ({
+      tabs: [...state.tabs, tab],
+      activeTabId: tab.id
+    }))
     get().executeQuery()
     get().saveTabs()
   },

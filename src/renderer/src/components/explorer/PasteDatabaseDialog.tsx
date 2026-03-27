@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { AlertTriangle, Database, Table2 } from 'lucide-react'
+import { AlertTriangle, Table2 } from 'lucide-react'
 
 export interface PasteDatabaseResult {
   targetDatabase: string
   dropTarget: boolean
+  collections?: string[]
 }
 
 interface PasteDatabaseDialogProps {
@@ -14,7 +15,7 @@ interface PasteDatabaseDialogProps {
   targetConnection: string
   existingDatabases: string[]
   isSameConnection: boolean
-  /** Optional list of collections to preview (e.g. from a dump folder) */
+  /** Optional list of collections (selectable for import, read-only preview for paste) */
   previewCollections?: string[]
   /** Label variant: 'paste' (default) or 'import' */
   variant?: 'paste' | 'import'
@@ -35,12 +36,33 @@ export function PasteDatabaseDialog({
   onSubmit,
   onCancel
 }: PasteDatabaseDialogProps) {
+  const isImport = variant === 'import'
   const defaultName = isSameConnection ? `${sourceName}_copy` : sourceName
   const existsAlready = existingDatabases.includes(sourceName)
   const [mode, setMode] = useState<PasteMode>(existsAlready ? 'overwrite' : 'new')
   const [newDbName, setNewDbName] = useState(defaultName)
   const [selectedDb, setSelectedDb] = useState(existsAlready ? sourceName : (existingDatabases[0] || ''))
   const nameRef = useRef<HTMLInputElement>(null)
+
+  // Collection selection state (only used for import variant)
+  const [selectedCols, setSelectedCols] = useState<Set<string>>(new Set(previewCollections || []))
+  const allColsSelected = previewCollections ? selectedCols.size === previewCollections.length : true
+  const noColsSelected = previewCollections ? selectedCols.size === 0 : false
+
+  const toggleCol = (name: string) => {
+    const next = new Set(selectedCols)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    setSelectedCols(next)
+  }
+
+  const toggleAllCols = () => {
+    if (allColsSelected) {
+      setSelectedCols(new Set())
+    } else {
+      setSelectedCols(new Set(previewCollections || []))
+    }
+  }
 
   useEffect(() => {
     if (mode === 'new') nameRef.current?.focus()
@@ -49,23 +71,23 @@ export function PasteDatabaseDialog({
   const nameConflicts = mode === 'new' && existingDatabases.includes(newDbName.trim())
 
   const canSubmit =
-    mode === 'overwrite'
-      ? selectedDb !== ''
-      : newDbName.trim() !== '' && !nameConflicts
+    (mode === 'overwrite' ? selectedDb !== '' : newDbName.trim() !== '' && !nameConflicts)
+    && (!isImport || !noColsSelected)
 
   const handleSubmit = () => {
     if (!canSubmit) return
+    const cols = isImport && previewCollections && !allColsSelected ? Array.from(selectedCols) : undefined
     if (mode === 'overwrite') {
-      onSubmit({ targetDatabase: selectedDb, dropTarget: true })
+      onSubmit({ targetDatabase: selectedDb, dropTarget: true, collections: cols })
     } else {
-      onSubmit({ targetDatabase: newDbName.trim(), dropTarget: false })
+      onSubmit({ targetDatabase: newDbName.trim(), dropTarget: false, collections: cols })
     }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-[460px] rounded-lg border border-border bg-card p-6 shadow-xl">
-        <h2 className="mb-1 text-lg font-semibold">{variant === 'import' ? 'Import Database' : 'Paste Database'}</h2>
+        <h2 className="mb-1 text-lg font-semibold">{isImport ? 'Import Database' : 'Paste Database'}</h2>
         <p className="mb-4 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{sourceName}</span>
           {isSameConnection ? (
@@ -75,20 +97,56 @@ export function PasteDatabaseDialog({
           )}
         </p>
 
-        {/* Collections preview */}
+        {/* Collections — selectable for import, read-only chips for paste */}
         {previewCollections && previewCollections.length > 0 && (
           <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
-            <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-              {previewCollections.length} collection{previewCollections.length !== 1 ? 's' : ''} found in dump:
-            </div>
-            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-              {previewCollections.map((col) => (
-                <span key={col} className="inline-flex items-center gap-1 rounded bg-background px-2 py-0.5 text-xs border border-border">
-                  <Table2 className="h-3 w-3 text-blue-400" />
-                  {col}
-                </span>
-              ))}
-            </div>
+            {isImport ? (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={allColsSelected}
+                      ref={(el) => { if (el) el.indeterminate = !allColsSelected && !noColsSelected }}
+                      onChange={toggleAllCols}
+                      className="rounded"
+                    />
+                    Select all
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    {selectedCols.size} of {previewCollections.length} selected
+                  </span>
+                </div>
+                <div className="max-h-40 space-y-0.5 overflow-y-auto">
+                  {previewCollections.map((col) => (
+                    <label key={col} className="flex cursor-pointer items-center gap-2 rounded px-2 py-0.5 hover:bg-accent">
+                      <input
+                        type="checkbox"
+                        checked={selectedCols.has(col)}
+                        onChange={() => toggleCol(col)}
+                        className="rounded"
+                      />
+                      <Table2 className="h-3 w-3 text-blue-400" />
+                      <span className="text-xs">{col}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  {previewCollections.length} collection{previewCollections.length !== 1 ? 's' : ''}:
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {previewCollections.map((col) => (
+                    <span key={col} className="inline-flex items-center gap-1 rounded bg-background px-2 py-0.5 text-xs border border-border">
+                      <Table2 className="h-3 w-3 text-blue-400" />
+                      {col}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -199,8 +257,8 @@ export function PasteDatabaseDialog({
             variant={mode === 'overwrite' ? 'destructive' : 'default'}
           >
             {mode === 'overwrite'
-              ? (variant === 'import' ? 'Overwrite & Import' : 'Overwrite & Paste')
-              : (variant === 'import' ? 'Import Database' : 'Paste Database')
+              ? (isImport ? 'Overwrite & Import' : 'Overwrite & Paste')
+              : (isImport ? 'Import Database' : 'Paste Database')
             }
           </Button>
         </div>

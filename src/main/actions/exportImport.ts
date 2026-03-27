@@ -129,12 +129,29 @@ const EXPORT_SCRIPT_PATH = pathJoin(tmpdir(), 'mango-export-worker.js')
 // Single-collection import worker — streams JSON line-by-line to handle any file size
 const IMPORT_WORKER_SCRIPT = `
 try {
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId, Decimal128, Long, UUID, Binary, Timestamp } = require('mongodb');
 const { readFileSync, existsSync, createReadStream, statSync } = require('fs');
 const { createInterface } = require('readline');
 const path = require('path');
 const send = (msg) => process.send(msg);
 const config = JSON.parse(process.argv[2]);
+
+function deserialize(doc) {
+  if (doc === null || doc === undefined) return doc;
+  if (typeof doc !== 'object') return doc;
+  if (Array.isArray(doc)) return doc.map(deserialize);
+  if (doc.$oid) { try { return new ObjectId(doc.$oid); } catch { return doc.$oid; } }
+  if (doc.$date) return new Date(doc.$date);
+  if (doc.$numberDecimal) return Decimal128.fromString(doc.$numberDecimal);
+  if (doc.$numberLong) return Long.fromString(doc.$numberLong);
+  if (doc.$uuid) return new UUID(doc.$uuid);
+  if (doc.$binary && doc.$type) return new Binary(Buffer.from(doc.$binary, 'base64'), parseInt(doc.$type, 16));
+  if (doc.$timestamp) return new Timestamp({ t: doc.$timestamp.t, i: doc.$timestamp.i });
+  if (doc.$regex) return new RegExp(doc.$regex, doc.$options || '');
+  const r = {};
+  for (const [k, v] of Object.entries(doc)) r[k] = deserialize(v);
+  return r;
+}
 
 // Stream a JSON array file line by line, yielding parsed objects in batches.
 // Works with our export format: [\\n  {\\n    ...\\n  },\\n  {\\n    ...\\n  }\\n]
@@ -149,7 +166,7 @@ async function* readJsonArrayStreaming(filePath, batchSize) {
 
   for await (const line of rl) {
     const trimmed = line.trim();
-    if (trimmed === '[' || trimmed === ']' || trimmed === '') continue;
+    if (depth === 0 && (trimmed === '[' || trimmed === ']' || trimmed === '')) continue;
 
     // Track brace depth
     for (let i = 0; i < trimmed.length; i++) {
@@ -201,9 +218,18 @@ async function run() {
     let copied = 0;
 
     for await (const batch of readJsonArrayStreaming(filePath, 2000)) {
-      const cleaned = batch.map(doc => { const { _id, ...rest } = doc; return rest; });
-      await db.collection(colName).insertMany(cleaned, { ordered: false });
-      copied += cleaned.length;
+      const restored = batch.map(deserialize);
+      try {
+        await db.collection(colName).insertMany(restored, { ordered: false });
+        copied += restored.length;
+      } catch (e) {
+        // BulkWriteError — some docs inserted, some had duplicate keys
+        if (e.insertedCount !== undefined) {
+          copied += e.insertedCount;
+        }
+        // Other errors: don't count, log for debugging
+        send({ type: 'batch-error', error: (e.message || String(e)).slice(0, 200) });
+      }
       send({ type: 'progress', copied });
     }
 
@@ -248,11 +274,11 @@ const config = JSON.parse(process.argv[2]);
 function serialize(doc) {
   if (doc === null || doc === undefined) return doc;
   if (typeof doc === 'string' || typeof doc === 'number' || typeof doc === 'boolean') return doc;
-  if (doc instanceof ObjectId || (doc && typeof doc.toHexString === 'function')) return doc.toHexString();
-  if (doc instanceof Date) return doc.toISOString();
-  if (doc instanceof Decimal128) return doc.toString();
-  if (doc instanceof Long) return doc.toNumber();
-  if (doc instanceof UUID) return doc.toString();
+  if (doc instanceof ObjectId || (doc && typeof doc.toHexString === 'function')) return { $oid: doc.toHexString() };
+  if (doc instanceof Date) return { $date: doc.toISOString() };
+  if (doc instanceof Decimal128) return { $numberDecimal: doc.toString() };
+  if (doc instanceof Long) return { $numberLong: doc.toString() };
+  if (doc instanceof UUID) return { $uuid: doc.toString() };
   if (doc instanceof Binary) return { $binary: doc.toString('base64'), $type: doc.sub_type.toString(16) };
   if (doc instanceof Timestamp) return { $timestamp: { t: doc.getHighBits(), i: doc.getLowBits() } };
   if (doc instanceof RegExp) return { $regex: doc.source, $options: doc.flags };
@@ -266,7 +292,7 @@ function serialize(doc) {
 }
 
 async function run() {
-  const { uri, database, outDir } = config;
+  const { uri, database, outDir, collections: selectedCols } = config;
   let client;
   try {
     client = new MongoClient(uri);
@@ -276,8 +302,13 @@ async function run() {
     mkdirSync(dbDir, { recursive: true });
 
     const allCols = await db.listCollections().toArray();
-    const regular = allCols.filter(c => c.type !== 'view');
-    const views = allCols.filter(c => c.type === 'view');
+    let regular = allCols.filter(c => c.type !== 'view');
+    let views = allCols.filter(c => c.type === 'view');
+    if (selectedCols && selectedCols.length > 0) {
+      const selected = new Set(selectedCols);
+      regular = regular.filter(c => selected.has(c.name));
+      views = views.filter(c => selected.has(c.name));
+    }
 
     send({ type: 'init', collections: regular.map(c => c.name), viewCount: views.length });
 
@@ -386,7 +417,7 @@ function importCollectionInProcess(
     ], {
       execArgv: ['--max-old-space-size=8192'],
       silent: true,
-      env: { ...process.env, NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
     })
 
     activeProcesses.set(op.id, child)
@@ -546,15 +577,16 @@ function runExportWorker(
   uri: string,
   database: string,
   outDir: string,
-  op: OperationProgress
+  op: OperationProgress,
+  collections?: string[]
 ): Promise<{ path: string }> {
   return new Promise((resolve, reject) => {
     const child = fork(EXPORT_SCRIPT_PATH, [
-      JSON.stringify({ uri, database, outDir })
+      JSON.stringify({ uri, database, outDir, collections })
     ], {
       execArgv: ['--max-old-space-size=8192'],
       silent: true,
-      env: { ...process.env, NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
     })
 
     activeProcesses.set(op.id, child)
@@ -719,9 +751,20 @@ export async function exportCollection(
   return { path: filePath, count: serialized.length }
 }
 
-export async function exportDatabaseDump(
+export async function listDatabaseCollections(
   connectionId: string,
   database: string
+): Promise<{ name: string; type: string }[]> {
+  const client = mongoService.getClient(connectionId)
+  const db = client.db(database)
+  const cols = await db.listCollections().toArray()
+  return cols.map((c) => ({ name: c.name, type: c.type || 'collection' })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function exportDatabaseDump(
+  connectionId: string,
+  database: string,
+  collections?: string[]
 ): Promise<{ path: string } | null> {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
@@ -737,18 +780,20 @@ export async function exportDatabaseDump(
   const profile = connections.find((c) => c.id === connectionId)
   if (!profile) throw new Error('Connection not found')
 
-  // Try mongodump first
-  try {
-    await execFileAsync('mongodump', ['--uri', profile.uri, '--db', database, '--out', outDir])
-    const opId = `export-${++opCounter}-${Date.now()}`
-    const op: OperationProgress = {
-      id: opId, type: 'export', label: `Export ${database} from ${profile.name}`,
-      status: 'done', currentStep: 'Complete (mongodump)', processed: 0, total: 0,
-      collections: [], startedAt: Date.now()
-    }
-    emitProgress('operation:progress', op)
-    return { path: outDir }
-  } catch { /* Fall back to worker-based JSON export */ }
+  // Try mongodump first (only for full database exports)
+  if (!collections) {
+    try {
+      await execFileAsync('mongodump', ['--uri', profile.uri, '--db', database, '--out', outDir])
+      const opId = `export-${++opCounter}-${Date.now()}`
+      const op: OperationProgress = {
+        id: opId, type: 'export', label: `Export ${database} from ${profile.name}`,
+        status: 'done', currentStep: 'Complete (mongodump)', processed: 0, total: 0,
+        collections: [], startedAt: Date.now()
+      }
+      emitProgress('operation:progress', op)
+      return { path: outDir }
+    } catch { /* Fall back to worker-based JSON export */ }
+  }
 
   const opId = `export-${++opCounter}-${Date.now()}`
   const op: OperationProgress = {
@@ -759,13 +804,14 @@ export async function exportDatabaseDump(
   }
   emitProgress('operation:progress', op)
 
-  return runExportWorker(profile.uri, database, outDir, op)
+  return runExportWorker(profile.uri, database, outDir, op, collections)
 }
 
 export async function importDatabaseDump(
   connectionId: string,
   database: string,
-  dropExisting: boolean = false
+  dropExisting: boolean = false,
+  collections?: string[]
 ): Promise<{ collections: number; documents: number } | null> {
   const connections = configService.loadConnections()
   const profile = connections.find((c) => c.id === connectionId)
@@ -781,18 +827,24 @@ export async function importDatabaseDump(
   if (canceled || filePaths.length === 0) return null
   const importDir = filePaths[0]
 
-  // Try mongorestore first
-  try {
-    const args = ['--uri', profile!.uri, '--db', database, '--dir', importDir]
-    if (dropExisting) args.push('--drop')
-    await execFileAsync('mongorestore', args)
-    return { collections: -1, documents: -1 }
-  } catch { /* Fall back to worker-based JSON import */ }
+  // Try mongorestore first (only for full database imports)
+  if (!collections) {
+    try {
+      const args = ['--uri', profile!.uri, '--db', database, '--dir', importDir]
+      if (dropExisting) args.push('--drop')
+      await execFileAsync('mongorestore', args)
+      return { collections: -1, documents: -1 }
+    } catch { /* Fall back to worker-based JSON import */ }
+  }
 
   const { readdirSync } = await import('fs')
   const { join } = await import('path')
-  const files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
-  const hasViews = existsSync(join(importDir, '_views.json'))
+  let files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
+  if (collections && collections.length > 0) {
+    const selected = new Set(collections)
+    files = files.filter((f: string) => selected.has(f.replace('.json', '')))
+  }
+  const hasViews = !collections && existsSync(join(importDir, '_views.json'))
 
   const opId = `import-${++opCounter}-${Date.now()}`
   const op: OperationProgress = {
@@ -879,25 +931,32 @@ export async function importDatabaseFromDump(
   connectionId: string,
   importDir: string,
   targetDatabase: string,
-  dropTarget: boolean
+  dropTarget: boolean,
+  collections?: string[]
 ): Promise<{ database: string; collections: number; documents: number }> {
   const connections = configService.loadConnections()
   const profile = connections.find((c) => c.id === connectionId)
   if (profile?.isProduction) throw new Error('Cannot import to a production connection')
   if (!profile) throw new Error('Connection not found')
 
-  // Try mongorestore first
-  try {
-    const args = ['--uri', profile.uri, '--db', targetDatabase, '--dir', importDir]
-    if (dropTarget) args.push('--drop')
-    await execFileAsync('mongorestore', args)
-    return { database: targetDatabase, collections: -1, documents: -1 }
-  } catch { /* Fall back to worker-based JSON import */ }
+  // Try mongorestore first (only for full database imports)
+  if (!collections) {
+    try {
+      const args = ['--uri', profile.uri, '--db', targetDatabase, '--dir', importDir]
+      if (dropTarget) args.push('--drop')
+      await execFileAsync('mongorestore', args)
+      return { database: targetDatabase, collections: -1, documents: -1 }
+    } catch { /* Fall back to worker-based JSON import */ }
+  }
 
   const { readdirSync } = await import('fs')
   const { join } = await import('path')
-  const files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
-  const hasViews = existsSync(join(importDir, '_views.json'))
+  let files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
+  if (collections && collections.length > 0) {
+    const selected = new Set(collections)
+    files = files.filter((f: string) => selected.has(f.replace('.json', '')))
+  }
+  const hasViews = !collections && existsSync(join(importDir, '_views.json'))
 
   const opId = `import-${++opCounter}-${Date.now()}`
   const op: OperationProgress = {

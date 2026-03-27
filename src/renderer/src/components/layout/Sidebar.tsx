@@ -425,7 +425,8 @@ export function Sidebar() {
                   connectionId: importDump.connectionId,
                   importDir: importDump.importDir,
                   targetDatabase: result.targetDatabase,
-                  dropTarget: result.dropTarget
+                  dropTarget: result.dropTarget,
+                  collections: result.collections
                 })
                 loadDatabases()
               } catch (err) {

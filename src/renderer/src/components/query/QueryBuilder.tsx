@@ -201,7 +201,7 @@ export function QueryBuilder() {
     return Object.entries(fieldMap).map(([name, values]) => ({
       name,
       type: inferFieldType(values)
-    }))
+    })).sort((a, b) => a.name.localeCompare(b.name))
   }, [tab?.results])
 
   const addRow = (field?: string, type?: FieldType) => {

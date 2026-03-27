@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal, Pencil } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal, Pencil, ExternalLink, RefreshCw } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -7,6 +7,8 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
 import type { DatabaseInfo } from '@shared/types'
 import { InsertDocumentsDialog } from '@renderer/components/data/InsertDocumentsDialog'
+import { ExportDatabaseDialog } from '@renderer/components/explorer/ExportDatabaseDialog'
+import { ImportDatabaseDialog } from '@renderer/components/explorer/ImportDatabaseDialog'
 
 interface DatabaseTreeProps {
   databases: DatabaseInfo[]
@@ -32,6 +34,8 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   const [renameTarget, setRenameTarget] = useState<{ db: string; col: string } | null>(null)
   const [renameInput, setRenameInput] = useState('')
   const [insertTarget, setInsertTarget] = useState<{ db: string; col: string } | null>(null)
+  const [exportDbTarget, setExportDbTarget] = useState<string | null>(null)
+  const [importTarget, setImportTarget] = useState<{ db: string; importDir: string; collections: string[] } | null>(null)
   const {
     collections,
     selectedDatabase,
@@ -40,14 +44,17 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
     loadDatabases
   } = useExplorerStore()
   const openTab = useTabStore((s) => s.openTab)
+  const openNewTab = useTabStore((s) => s.openNewTab)
   const openDatabaseTab = useTabStore((s) => s.openDatabaseTab)
   const activeTabId = useTabStore((s) => s.activeTabId)
+
+  const colKey = (dbName: string) => `${connectionId}:${dbName}`
 
   const filteredDatabases = searchFilter
     ? databases.filter(
         (db) =>
           db.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          collections[db.name]?.some((c) =>
+          collections[colKey(db.name)]?.some((c) =>
             c.name.toLowerCase().includes(searchFilter.toLowerCase())
           )
       )
@@ -59,10 +66,10 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       next.delete(dbName)
     } else {
       next.add(dbName)
-      if (!collections[dbName]) {
+      if (!collections[colKey(dbName)]) {
         setLoadingDbs((prev) => new Set(prev).add(dbName))
         try {
-          await loadCollections(dbName)
+          await loadCollections(dbName, connectionId)
         } catch (err) {
           console.error(`Failed to load collections for ${dbName}:`, err)
         } finally {
@@ -95,7 +102,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
     if (!confirm(`Drop collection "${dbName}.${colName}"? This cannot be undone.`)) return
     try {
       await trpc.admin.dropCollection.mutate({ database: dbName, collection: colName })
-      await loadCollections(dbName)
+      await loadCollections(dbName, connectionId)
     } catch (err) {
       alert(`Failed to drop collection: ${err instanceof Error ? err.message : err}`)
     }
@@ -110,7 +117,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       })
       setNewCollName(null)
       setNewCollInput('')
-      await loadCollections(dbName)
+      await loadCollections(dbName, connectionId)
     } catch (err) {
       alert(`Failed to create collection: ${err instanceof Error ? err.message : err}`)
     }
@@ -127,7 +134,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       await trpc.admin.renameCollection.mutate({ database: dbName, oldName, newName })
       setRenameTarget(null)
       setRenameInput('')
-      await loadCollections(dbName)
+      await loadCollections(dbName, connectionId)
     } catch (err) {
       alert(`Failed to rename collection: ${err instanceof Error ? err.message : err}`)
     }
@@ -175,6 +182,14 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
             </ContextMenu.Trigger>
             <ContextMenu.Portal>
               <ContextMenu.Content className="min-w-[160px] rounded-md border border-border bg-popover p-1 text-sm shadow-md">
+                <ContextMenu.Item
+                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                  onSelect={() => loadCollections(db.name, connectionId)}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Refresh Collections
+                </ContextMenu.Item>
+                <ContextMenu.Separator className="my-1 h-px bg-border" />
                 <ContextMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                   onSelect={() => {
@@ -288,11 +303,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
                 <ContextMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
-                  onSelect={async () => {
-                    await trpc.exportImport.exportDatabaseDump.mutate({
-                      connectionId, database: db.name
-                    })
-                  }}
+                  onSelect={() => setExportDbTarget(db.name)}
                 >
                   <Download className="h-3.5 w-3.5" />
                   Export Database (dump)
@@ -301,14 +312,13 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                   <ContextMenu.Item
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                     onSelect={async () => {
-                      const drop = confirm('Drop existing collections before import?')
                       try {
-                        await trpc.exportImport.importDatabaseDump.mutate({
-                          connectionId, database: db.name, dropExisting: drop
-                        })
-                        loadCollections(db.name)
+                        const result = await trpc.exportImport.pickDumpFolder.mutate()
+                        if (result) {
+                          setImportTarget({ db: db.name, importDir: result.importDir, collections: result.collections })
+                        }
                       } catch (err) {
-                        alert(`Import failed: ${err instanceof Error ? err.message : err}`)
+                        alert(`Failed to read dump folder: ${err instanceof Error ? err.message : err}`)
                       }
                     }}
                   >
@@ -340,7 +350,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
 
           {/* Collections */}
           {expandedDbs.has(db.name) && (() => {
-            const allItems = collections[db.name]
+            const allItems = collections[colKey(db.name)]
               ?.filter((c) => !searchFilter || c.name.toLowerCase().includes(searchFilter.toLowerCase()))
               .sort((a, b) => a.name.localeCompare(b.name)) ?? []
             const regularCollections = allItems.filter((c) => c.type !== 'view')
@@ -391,6 +401,14 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                   </ContextMenu.Trigger>
                   <ContextMenu.Portal>
                     <ContextMenu.Content className="min-w-[160px] rounded-md border border-border bg-popover p-1 text-sm shadow-md">
+                      <ContextMenu.Item
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                        onSelect={() => openNewTab(connectionId, db.name, col.name, col.type === 'view')}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open in New Tab
+                      </ContextMenu.Item>
+                      <ContextMenu.Separator className="my-1 h-px bg-border" />
                       <ContextMenu.Item
                         className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                         onSelect={async () => {
@@ -552,7 +570,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                 </div>
               )}
 
-              {!collections[db.name]?.length && !loadingDbs.has(db.name) && (
+              {!collections[colKey(db.name)]?.length && !loadingDbs.has(db.name) && (
                 <p className="px-2 py-1 text-xs text-muted-foreground">No collections</p>
               )}
             </div>
@@ -567,8 +585,44 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
           database={insertTarget.db}
           collection={insertTarget.col}
           onInserted={() => {
-            loadCollections(insertTarget.db)
+            loadCollections(insertTarget.db, connectionId)
           }}
+        />
+      )}
+      {exportDbTarget && (
+        <ExportDatabaseDialog
+          connectionId={connectionId}
+          database={exportDbTarget}
+          onSubmit={async (cols) => {
+            setExportDbTarget(null)
+            await trpc.exportImport.exportDatabaseDump.mutate({
+              connectionId, database: exportDbTarget, collections: cols
+            })
+          }}
+          onCancel={() => setExportDbTarget(null)}
+        />
+      )}
+      {importTarget && (
+        <ImportDatabaseDialog
+          database={importTarget.db}
+          collections={importTarget.collections}
+          onSubmit={async (cols, drop) => {
+            const target = importTarget
+            setImportTarget(null)
+            try {
+              await trpc.exportImport.importDatabaseFromDump.mutate({
+                connectionId,
+                importDir: target.importDir,
+                targetDatabase: target.db,
+                dropTarget: drop,
+                collections: cols
+              })
+              loadCollections(target.db, connectionId)
+            } catch (err) {
+              alert(`Import failed: ${err instanceof Error ? err.message : err}`)
+            }
+          }}
+          onCancel={() => setImportTarget(null)}
         />
       )}
     </div>

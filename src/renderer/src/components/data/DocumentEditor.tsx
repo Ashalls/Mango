@@ -9,10 +9,7 @@ import { trpc } from '@renderer/lib/trpc'
 export function DocumentEditor() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setEditorContent, clearDocument, executeQuery } = useTabStore()
-  const themeMode = useSettingsStore((s) => s.theme)
-  const effectiveTheme = themeMode === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : themeMode
+  const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
+import { useMemo, useCallback, useState, useRef } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community'
 import type { CellEditingStoppedEvent } from 'ag-grid-community'
@@ -150,15 +150,7 @@ function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
 export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
-  const themeMode = useSettingsStore((s) => s.theme)
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-  const effectiveTheme = themeMode === 'system' ? (systemDark ? 'dark' : 'light') : themeMode
+  const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [contextDoc, setContextDoc] = useState<Record<string, unknown> | null>(null)
   const [contextCell, setContextCell] = useState<{ field: string; value: unknown } | null>(null)

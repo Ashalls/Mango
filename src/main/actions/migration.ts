@@ -120,7 +120,7 @@ function copyCollectionInProcess(
     ], {
       execArgv: ['--max-old-space-size=4096'],
       silent: true,
-      env: { ...process.env, NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
     })
 
     activeProcesses.set(op.id, child)

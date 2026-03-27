@@ -30,8 +30,8 @@ export async function listDatabases(): Promise<DatabaseInfo[]> {
   }
 }
 
-export async function listCollections(database: string): Promise<CollectionInfo[]> {
-  const db = mongoService.getDb(database)
+export async function listCollections(database: string, connectionId?: string): Promise<CollectionInfo[]> {
+  const db = mongoService.getDb(database, connectionId)
   const collections = await db.listCollections().toArray()
 
   return collections.map((col) => ({
