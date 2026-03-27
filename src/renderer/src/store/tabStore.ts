@@ -414,20 +414,23 @@ export const useTabStore = create<TabStore>((set, get) => ({
       if (!raw) return
       const { tabs: savedTabs, activeTabId } = JSON.parse(raw)
       if (!Array.isArray(savedTabs)) return
-      const tabs = savedTabs.map((t: { connectionId: string; database: string; collection: string; scope?: string; label?: string }) => {
-        const tab = createTab(t.connectionId, t.database, t.collection)
-        tab.scope = (t.scope as Tab['scope']) || 'collection'
-        if (t.label) tab.label = t.label
-        if (tab.scope !== 'collection') {
-          // Reconstruct the id for non-collection tabs
-          if (tab.scope === 'database') {
-            tab.id = `${t.connectionId}:${t.database}:__db__`
-          } else if (tab.scope === 'connection') {
-            tab.id = `${t.connectionId}:__conn__`
-          }
-        }
-        return tab
-      })
+      const seen = new Set<string>()
+      const tabs = savedTabs
+        .map((t: { id?: string; connectionId: string; database: string; collection: string; scope?: string; label?: string }) => {
+          const tab = createTab(t.connectionId, t.database, t.collection)
+          tab.scope = (t.scope as Tab['scope']) || 'collection'
+          if (t.label) tab.label = t.label
+          // Preserve saved id (handles duplicate tabs with ::N suffix)
+          if (t.id) tab.id = t.id
+          else if (tab.scope === 'database') tab.id = `${t.connectionId}:${t.database}:__db__`
+          else if (tab.scope === 'connection') tab.id = `${t.connectionId}:__conn__`
+          return tab
+        })
+        .filter((tab: Tab) => {
+          if (seen.has(tab.id)) return false
+          seen.add(tab.id)
+          return true
+        })
       set({ tabs, activeTabId: activeTabId || (tabs.length > 0 ? tabs[0].id : null) })
     } catch { /* ignore */ }
   }

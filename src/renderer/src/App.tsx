@@ -49,9 +49,19 @@ async function autoReconnectTabs() {
   // Now execute queries for all restored collection tabs
   const tabStore = useTabStore.getState()
   const currentActiveId = tabStore.activeTabId
+  let lastConnId: string | null = null
 
   for (const tab of tabStore.tabs) {
     if (tab.scope !== 'collection') continue
+    // Switch backend active connection if needed
+    if (tab.connectionId !== lastConnId) {
+      try {
+        await connStore.setActive(tab.connectionId)
+        lastConnId = tab.connectionId
+      } catch {
+        continue // skip tabs for unreachable connections
+      }
+    }
     // Temporarily make this tab active so executeQuery targets it
     tabStore.setActiveTab(tab.id)
     try {
@@ -61,9 +71,13 @@ async function autoReconnectTabs() {
     }
   }
 
-  // Restore the original active tab
+  // Restore the original active tab and its connection
   if (currentActiveId) {
     tabStore.setActiveTab(currentActiveId)
+    const activeTab = tabStore.tabs.find((t) => t.id === currentActiveId)
+    if (activeTab) {
+      try { await connStore.setActive(activeTab.connectionId) } catch {}
+    }
   }
 }
 

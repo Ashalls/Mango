@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { X, Table2, Eye, Database, MessageSquare } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
@@ -7,6 +8,15 @@ import { useConnectionStore } from '@renderer/store/connectionStore'
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useTabStore()
   const profiles = useConnectionStore((s) => s.profiles)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const prevTabCount = useRef(tabs.length)
+
+  useEffect(() => {
+    if (tabs.length > prevTabCount.current && containerRef.current) {
+      containerRef.current.scrollLeft = containerRef.current.scrollWidth
+    }
+    prevTabCount.current = tabs.length
+  }, [tabs.length])
 
   if (tabs.length === 0) return null
 
@@ -33,7 +43,7 @@ export function TabBar() {
   }
 
   return (
-    <div className="flex h-9 items-center border-b border-border bg-card overflow-x-auto">
+    <div ref={containerRef} className="flex h-9 items-center border-b border-border bg-card overflow-x-auto">
       {tabs.map((tab, index) => (
         <ContextMenu.Root key={tab.id}>
           <ContextMenu.Trigger asChild>
