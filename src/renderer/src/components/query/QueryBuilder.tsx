@@ -92,6 +92,7 @@ function parseValue(value: string, type: FieldType): unknown {
   if (type === 'Number') return Number(trimmed) || 0
   if (type === 'Boolean') return trimmed === 'true'
   if (type === 'Date') return trimmed // Will be wrapped in $date if needed
+  if (type === 'ObjectId') return trimmed // Keep as string — backend convertObjectIds handles it
   if (trimmed === 'true') return true
   if (trimmed === 'false') return false
   if (trimmed === 'null') return null
@@ -438,6 +439,11 @@ export function QueryBuilder() {
                       onChange={(e) => updateRow(row.id, { field: e.target.value })}
                     >
                       <option value="">-- field --</option>
+                      {row.field && !availableFields.some((f) => f.name === row.field) && (
+                        <option key={row.field} value={row.field}>
+                          {row.field}
+                        </option>
+                      )}
                       {availableFields.map((f) => (
                         <option key={f.name} value={f.name}>
                           {f.name}
