@@ -205,7 +205,7 @@ export function QueryBuilder() {
     })).sort((a, b) => a.name.localeCompare(b.name))
   }, [tab?.results])
 
-  const addRow = (field?: string, type?: FieldType) => {
+  const addRow = (field?: string, type?: FieldType, value?: string) => {
     const t = type || 'Auto'
     const ops = getOperators(t)
     setRows([
@@ -215,7 +215,7 @@ export function QueryBuilder() {
         field: field || '',
         operator: ops[0].value,
         type: t,
-        value: ''
+        value: value || ''
       }
     ])
   }
@@ -289,9 +289,11 @@ export function QueryBuilder() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const field = e.dataTransfer.getData('text/field-name')
+    const cellValue = e.dataTransfer.getData('text/cell-value')
     if (field) {
       const fieldInfo = availableFields.find((f) => f.name === field)
-      addRow(field, fieldInfo?.type)
+      addRow(field, fieldInfo?.type, cellValue || undefined)
+      if (!expanded) setExpanded(true)
     }
   }
 
@@ -311,7 +313,20 @@ export function QueryBuilder() {
   return (
     <div className="border-b border-border bg-card">
       {/* FILTER section header */}
-      <div className="flex w-full items-center justify-between px-4 py-1.5">
+      <div
+        className="flex w-full items-center justify-between px-4 py-1.5"
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.currentTarget.classList.add('ring-1', 'ring-primary/50')
+        }}
+        onDragLeave={(e) => {
+          e.currentTarget.classList.remove('ring-1', 'ring-primary/50')
+        }}
+        onDrop={(e) => {
+          e.currentTarget.classList.remove('ring-1', 'ring-primary/50')
+          handleDrop(e)
+        }}
+      >
         <button
           className="flex items-center gap-1.5 text-xs font-medium"
           onClick={() => setExpanded(!expanded)}
@@ -411,6 +426,7 @@ export function QueryBuilder() {
                       e.preventDefault()
                       e.currentTarget.classList.remove('ring-1', 'ring-primary/50', 'rounded')
                       const field = e.dataTransfer.getData('text/field-name')
+                      const cellValue = e.dataTransfer.getData('text/cell-value')
                       if (field) {
                         const fieldInfo = availableFields.find((f) => f.name === field)
                         const updates: Partial<FilterRow> = { field }
@@ -421,11 +437,9 @@ export function QueryBuilder() {
                             updates.operator = ops[0].value
                           }
                         }
+                        if (cellValue) updates.value = cellValue
                         updateRow(row.id, updates)
-                      }
-                      // Also accept cell value drops into the value field
-                      const cellValue = e.dataTransfer.getData('text/cell-value')
-                      if (cellValue && !field) {
+                      } else if (cellValue) {
                         updateRow(row.id, { value: cellValue })
                       }
                     }}
