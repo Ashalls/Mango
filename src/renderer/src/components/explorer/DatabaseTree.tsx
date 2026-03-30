@@ -387,8 +387,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         activeTabId === `${connectionId}:${db.name}:${col.name}` &&
                           'bg-sidebar-accent text-sidebar-accent-foreground'
                       )}
-                      onClick={() => handleCollectionClick(db.name, col.name)}
-                      onDoubleClick={() => openNewTab(connectionId, db.name, col.name, col.type === 'view')}
+                      onDoubleClick={() => handleCollectionClick(db.name, col.name)}
                     >
                       <Table2 className="h-3.5 w-3.5 text-blue-400" />
                       <span className="truncate">{col.name}</span>
@@ -514,8 +513,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                             activeTabId === `${connectionId}:${db.name}:${view.name}` &&
                               'bg-sidebar-accent text-sidebar-accent-foreground'
                           )}
-                          onClick={() => handleCollectionClick(db.name, view.name, true)}
-                          onDoubleClick={() => openNewTab(connectionId, db.name, view.name, true)}
+                          onDoubleClick={() => handleCollectionClick(db.name, view.name, true)}
                         >
                           <Eye className="h-3.5 w-3.5 text-purple-400" />
                           <span className="truncate">{view.name}</span>
