@@ -1,5 +1,5 @@
 import { writeFileSync, readFileSync, existsSync, createWriteStream, createReadStream, statSync } from 'fs'
-import { dialog, BrowserWindow } from 'electron'
+import { app, dialog, BrowserWindow } from 'electron'
 import { execFile, fork, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { tmpdir } from 'os'
@@ -417,7 +417,7 @@ function importCollectionInProcess(
     ], {
       execArgv: ['--max-old-space-size=8192'],
       silent: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter) }
     })
 
     activeProcesses.set(op.id, child)
@@ -586,7 +586,7 @@ function runExportWorker(
     ], {
       execArgv: ['--max-old-space-size=8192'],
       silent: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter) }
     })
 
     activeProcesses.set(op.id, child)

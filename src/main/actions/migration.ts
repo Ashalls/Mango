@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { fork, ChildProcess } from 'child_process'
 import { writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -120,7 +120,7 @@ function copyCollectionInProcess(
     ], {
       execArgv: ['--max-old-space-size=4096'],
       silent: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: pathJoin(process.cwd(), 'node_modules') }
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter) }
     })
 
     activeProcesses.set(op.id, child)
