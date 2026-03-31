@@ -1,46 +1,44 @@
 ---
 name: release
-description: Build and publish a new GitHub release with proper electron-updater assets
+description: Bump version, tag, push, and trigger CI to build and publish a GitHub release
 user_invocable: true
+argument-hint: "[patch|minor|major]"
 ---
 
 # Release Process
 
-Execute these steps in order to create a proper release for the Mango Electron app.
+Create a new release for Mango. CI (`.github/workflows/release.yml`) automatically builds Windows + macOS distributables and creates the GitHub Release when a `v*` tag is pushed.
 
 ## Steps
 
-1. **Bump version**: Run `npm version patch --no-git-tag-version` (or `minor`/`major` if specified by user).
+1. **Check for uncommitted changes**: Run `git status --short`. If there are uncommitted changes, ask the user whether to commit them first or abort.
 
-2. **Build the app**: Run `npm run build` to compile with electron-vite.
+2. **Determine version bump**: Default to `patch`. If the user specified `minor` or `major` as an argument, use that instead.
 
-3. **Build distributable**: Run `npx electron-builder --win` to create the Windows installer.
+3. **Bump version**: Run `npm version {patch|minor|major} --no-git-tag-version`.
 
-4. **Verify dist artifacts exist** — all three are required for electron-updater:
-   - `dist/Mango-{version}-setup.exe`
-   - `dist/Mango-{version}-setup.exe.blockmap`
-   - `dist/latest.yml`
-
-5. **Commit and tag**:
-   - `git add package.json`
-   - `git commit -m "v{version}"`
-   - `git tag v{version}`
-   - `git push && git push --tags`
-
-6. **Create GitHub release** with ALL three artifacts:
+4. **Commit version bump**:
    ```
-   gh release create v{version} \
-     "dist/Mango-{version}-setup.exe" \
-     "dist/Mango-{version}-setup.exe.blockmap" \
-     "dist/latest.yml" \
-     --title "v{version}" \
-     --notes "release notes here"
+   git add package.json
+   git commit -m "v{version}"
    ```
 
-7. **Verify** the release has all 3 assets: `gh release view v{version} --json assets --jq '.assets[].name'`
+5. **Tag**:
+   ```
+   git tag v{version}
+   ```
+
+6. **Push commits and tag**:
+   ```
+   git push && git push --tags
+   ```
+
+7. **Verify CI triggered**: Run `gh run list --limit 3` to confirm the Release workflow started.
+
+8. **Report**: Tell the user the release is in progress with a link to the Actions run.
 
 ## Important
 
-- The `latest.yml` and `.blockmap` files MUST be uploaded — without them, electron-updater auto-update will not work.
-- The splash screen version is set dynamically from `app.getVersion()` (which reads `package.json`), so bumping `package.json` is sufficient — no need to edit `resources/splash.html`.
-- Ask the user for release notes or generate them from commits since the last tag.
+- Do NOT build locally or create the GitHub Release manually — CI handles everything.
+- The splash screen version reads from `package.json` at runtime, so bumping `package.json` is sufficient.
+- CI builds both Windows (.exe) and macOS (.dmg) and uploads all artifacts including `latest.yml` and `.blockmap` files needed for auto-update.
