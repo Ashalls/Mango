@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { X, Eye, EyeOff, ShieldAlert, Trash2, Lock } from 'lucide-react'
+import { X, Eye, EyeOff, ShieldAlert, Lock } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 
 interface ConnectionDialogProps {
   onClose: () => void
-  editProfile?: { id: string; name: string; uri: string; color?: string; isProduction?: boolean; protectDropTruncate?: boolean; isReadOnly?: boolean; claudeAccess?: 'readonly' | 'readwrite' }
+  editProfile?: { id: string; name: string; uri: string; color?: string; isProduction?: boolean; isReadOnly?: boolean; claudeAccess?: 'readonly' | 'readwrite' }
 }
 
 export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps) {
@@ -14,7 +14,6 @@ export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps
   const [uri, setUri] = useState(editProfile?.uri || '')
   const [color, setColor] = useState(editProfile?.color || '#10b981')
   const [isProduction, setIsProduction] = useState(editProfile?.isProduction || false)
-  const [protectDropTruncate, setProtectDropTruncate] = useState(editProfile?.protectDropTruncate || false)
   const [isReadOnly, setIsReadOnly] = useState(editProfile?.isReadOnly || false)
   const [claudeAccess, setClaudeAccess] = useState<'readonly' | 'readwrite'>(
     editProfile?.claudeAccess || (editProfile?.isProduction ? 'readonly' : 'readwrite')
@@ -35,7 +34,6 @@ export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps
         uri: uri.trim(),
         color,
         isProduction,
-        protectDropTruncate,
         isReadOnly,
         claudeAccess
       })
@@ -144,39 +142,6 @@ export function ConnectionDialog({ onClose, editProfile }: ConnectionDialogProps
               <div
                 className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${
                   isProduction ? 'translate-x-4' : 'translate-x-0'
-                }`}
-              />
-            </div>
-          </div>
-
-          {/* Protect from Drop & Truncate toggle */}
-          <div
-            className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 ${
-              protectDropTruncate
-                ? 'border-amber-500/50 bg-amber-500/10'
-                : 'border-border'
-            }`}
-            onClick={() => setProtectDropTruncate(!protectDropTruncate)}
-          >
-            <Trash2
-              className={`h-5 w-5 ${protectDropTruncate ? 'text-amber-400' : 'text-muted-foreground'}`}
-            />
-            <div className="flex-1">
-              <p className={`text-sm font-medium ${protectDropTruncate ? 'text-amber-400' : ''}`}>
-                Protect from Drop & Truncate
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Hide drop and truncate options from collection context menu
-              </p>
-            </div>
-            <div
-              className={`h-5 w-9 rounded-full transition-colors ${
-                protectDropTruncate ? 'bg-amber-500' : 'bg-secondary'
-              }`}
-            >
-              <div
-                className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                  protectDropTruncate ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
             </div>

@@ -25,11 +25,11 @@ interface DatabaseTreeProps {
   databaseCodebasePaths?: Record<string, string>
   onSetDbCodebasePath?: (dbName: string) => void
   onClearDbCodebasePath?: (dbName: string) => void
-  protectDropTruncate?: boolean
   isReadOnly?: boolean
+  connectionName?: string
 }
 
-export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath, onClearDbCodebasePath, protectDropTruncate, isReadOnly }: DatabaseTreeProps) {
+export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath, onClearDbCodebasePath, isReadOnly, connectionName }: DatabaseTreeProps) {
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set())
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
@@ -106,6 +106,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   const handleDropCollection = async (dbName: string, colName: string) => {
     try {
       await trpc.admin.dropCollection.mutate({ database: dbName, collection: colName })
+      alert(`Collection "${colName}" has been dropped from database "${dbName}".`)
       await loadCollections(dbName, connectionId)
     } catch (err) {
       alert(`Failed to drop collection: ${err instanceof Error ? err.message : err}`)
@@ -545,7 +546,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                           Rename Collection
                         </ContextMenu.Item>
                       )}
-                      {!protectDropTruncate && (isReadOnly ? (
+                      {isReadOnly ? (
                         <ContextMenu.Item
                           className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
                           disabled
@@ -561,8 +562,8 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                           <Trash2 className="h-3.5 w-3.5" />
                           Drop Collection
                         </ContextMenu.Item>
-                      ))}
-                      {!protectDropTruncate && (isReadOnly ? (
+                      )}
+                      {isReadOnly ? (
                         <ContextMenu.Item
                           className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
                           disabled
@@ -578,7 +579,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                           <Eraser className="h-3.5 w-3.5" />
                           Truncate Collection
                         </ContextMenu.Item>
-                      ))}
+                      )}
                     </ContextMenu.Content>
                   </ContextMenu.Portal>
                 </ContextMenu.Root>
@@ -717,7 +718,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       {dropTarget && (
         <ConfirmDestructiveDialog
           title="Drop Collection"
-          description={`This will permanently delete the collection "${dropTarget.col}" and all its documents from database "${dropTarget.db}". This cannot be undone.`}
+          description={`This will permanently delete the collection "${dropTarget.col}" and all its documents from database "${dropTarget.db}" on ${connectionName || 'this connection'}. This cannot be undone.`}
           confirmText={dropTarget.col}
           confirmLabel="Drop Collection"
           onConfirm={() => {
@@ -730,7 +731,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       {truncateTarget && (
         <ConfirmDestructiveDialog
           title="Truncate Collection"
-          description={`This will delete ALL documents from "${truncateTarget.col}" in database "${truncateTarget.db}". The collection, its indexes, and metadata will be preserved. This cannot be undone.`}
+          description={`This will delete ALL documents from "${truncateTarget.col}" in database "${truncateTarget.db}" on ${connectionName || 'this connection'}. The collection, its indexes, and metadata will be preserved. This cannot be undone.`}
           confirmText={truncateTarget.col}
           confirmLabel="Truncate Collection"
           onConfirm={() => {
@@ -743,7 +744,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       {dropDbTarget && (
         <ConfirmDestructiveDialog
           title="Drop Database"
-          description={`This will permanently delete the database "${dropDbTarget}" and ALL its collections. This cannot be undone.`}
+          description={`This will permanently delete the database "${dropDbTarget}" and ALL its collections on ${connectionName || 'this connection'}. This cannot be undone.`}
           confirmText={dropDbTarget}
           confirmLabel="Drop Database"
           onConfirm={() => {

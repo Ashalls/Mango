@@ -185,8 +185,8 @@ export function Sidebar() {
                             canPaste={clipboard !== null}
                             onPasteDatabase={() => handlePasteDatabase(profile.id)}
                             isProduction={profile.isProduction}
-                            protectDropTruncate={profile.protectDropTruncate}
                             isReadOnly={profile.isReadOnly}
+                            connectionName={profile.name}
                             claudeAccess={profile.claudeAccess}
                             claudeDbOverrides={profile.claudeDbOverrides}
                             databaseCodebasePaths={profile.databaseCodebasePaths}

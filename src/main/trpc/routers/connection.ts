@@ -14,6 +14,7 @@ export const connectionRouter = router({
         uri: z.string().min(1),
         color: z.string().optional(),
         isProduction: z.boolean().optional(),
+        isReadOnly: z.boolean().optional(),
         claudeAccess: z.enum(['readonly', 'readwrite']).optional(),
         claudeDbOverrides: z.record(z.enum(['readonly', 'readwrite'])).optional(),
         databaseCodebasePaths: z.record(z.string()).optional()

@@ -13,7 +13,6 @@ export function saveConnection(input: {
   uri: string
   color?: string
   isProduction?: boolean
-  protectDropTruncate?: boolean
   isReadOnly?: boolean
   claudeAccess?: 'readonly' | 'readwrite'
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
@@ -26,7 +25,6 @@ export function saveConnection(input: {
     uri: input.uri,
     color: input.color,
     isProduction: input.isProduction,
-    protectDropTruncate: input.protectDropTruncate,
     isReadOnly: input.isReadOnly,
     claudeAccess: input.claudeAccess ?? (input.isProduction ? 'readonly' : 'readwrite'),
     claudeDbOverrides: input.claudeDbOverrides,
@@ -35,7 +33,9 @@ export function saveConnection(input: {
 
   const index = connections.findIndex((c) => c.id === profile.id)
   if (index >= 0) {
-    connections[index] = profile
+    // Merge with existing profile to preserve fields not sent by the dialog
+    // (e.g. claudeDbOverrides, databaseCodebasePaths)
+    connections[index] = { ...connections[index], ...profile }
   } else {
     connections.push(profile)
   }
