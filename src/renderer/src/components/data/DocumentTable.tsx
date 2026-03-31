@@ -23,6 +23,7 @@ import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
+import { useConnectionStore } from '@renderer/store/connectionStore'
 import { trpc } from '@renderer/lib/trpc'
 
 ModuleRegistry.registerModules([AllCommunityModule])
@@ -151,6 +152,11 @@ export function DocumentTable() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
+  const activeProfile = useConnectionStore((s) => {
+    const activeId = s.activeConnection?.profileId
+    return activeId ? s.profiles.find((p) => p.id === activeId) : undefined
+  })
+  const isReadOnly = activeProfile?.isReadOnly ?? false
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [contextDoc, setContextDoc] = useState<Record<string, unknown> | null>(null)
   const [contextCell, setContextCell] = useState<{ field: string; value: unknown } | null>(null)
@@ -200,8 +206,8 @@ export function DocumentTable() {
             editable: (params: { data?: Record<string, unknown> }) => {
               // Add row: all fields except _id are editable
               if (params.data?.__isAddRow) return key !== '_id'
-              // Normal rows: editable except _id and views
-              return key !== '_id' && !tab.isView
+              // Normal rows: editable except _id, views, and read-only connections
+              return key !== '_id' && !tab.isView && !isReadOnly
             },
             minWidth: key === '_id' ? 200 : 120,
             width: key === '_id' ? 240 : undefined,
@@ -272,7 +278,7 @@ export function DocumentTable() {
   }
 
   const handleDeleteDocument = async (doc: Record<string, unknown>) => {
-    if (!tab || !doc._id) return
+    if (!tab || !doc._id || isReadOnly) return
     if (!confirm('Delete this document? This cannot be undone.')) return
     try {
       await trpc.mutation.deleteOne.mutate({
@@ -570,7 +576,7 @@ export function DocumentTable() {
       </div>
 
       {/* Add document button */}
-      {!tab.isView && !addRowOpen && (
+      {!tab.isView && !isReadOnly && !addRowOpen && (
         <div className="border-t border-border">
           <button
             className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
