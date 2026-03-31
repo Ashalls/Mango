@@ -4,6 +4,10 @@ export interface ConnectionProfile {
   uri: string
   color?: string
   isProduction?: boolean
+  /** When true, hides Drop/Truncate from collection context menu */
+  protectDropTruncate?: boolean
+  /** When true, blocks all manual write operations on this connection */
+  isReadOnly?: boolean
   /** Default Claude access for all databases on this connection */
   claudeAccess?: 'readonly' | 'readwrite'
   /** Per-database Claude access overrides (key = database name) */

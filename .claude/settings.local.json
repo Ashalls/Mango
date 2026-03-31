@@ -31,7 +31,11 @@
       "Bash(grep -r \"serialize\" \"D:/Git Repos/MongoLens/node_modules/.pnpm/electron-trpc@1.0.0-alpha.0\"*/node_modules/electron-trpc/src/renderer/ipcLink.ts)",
       "Bash(curl -s http://localhost:5173/)",
       "Bash(curl -s http://localhost:5173/src/main.tsx)",
-      "Bash(curl -v http://localhost:5173/)"
+      "Bash(curl -v http://localhost:5173/)",
+      "Bash(npm run:*)",
+      "Bash(npm version:*)",
+      "Bash(npx electron-builder:*)",
+      "Bash(gh release:*)"
     ]
   }
 }

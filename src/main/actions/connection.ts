@@ -13,6 +13,8 @@ export function saveConnection(input: {
   uri: string
   color?: string
   isProduction?: boolean
+  protectDropTruncate?: boolean
+  isReadOnly?: boolean
   claudeAccess?: 'readonly' | 'readwrite'
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
   databaseCodebasePaths?: Record<string, string>
@@ -24,6 +26,8 @@ export function saveConnection(input: {
     uri: input.uri,
     color: input.color,
     isProduction: input.isProduction,
+    protectDropTruncate: input.protectDropTruncate,
+    isReadOnly: input.isReadOnly,
     claudeAccess: input.claudeAccess ?? (input.isProduction ? 'readonly' : 'readwrite'),
     claudeDbOverrides: input.claudeDbOverrides,
     databaseCodebasePaths: input.databaseCodebasePaths
