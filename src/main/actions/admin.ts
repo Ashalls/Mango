@@ -64,3 +64,9 @@ export async function getIndexStats(
   const db = mongoService.getDb(database)
   return db.collection(collection).aggregate([{ $indexStats: {} }]).toArray()
 }
+
+export async function truncateCollection(database: string, collection: string): Promise<{ deletedCount: number }> {
+  const db = mongoService.getDb(database)
+  const result = await db.collection(collection).deleteMany({})
+  return { deletedCount: result.deletedCount }
+}

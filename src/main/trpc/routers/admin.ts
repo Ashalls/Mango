@@ -16,6 +16,13 @@ export const adminRouter = router({
       return { dropped: true }
     }),
 
+  truncateCollection: procedure
+    .input(z.object({ database: z.string(), collection: z.string() }))
+    .mutation(async ({ input }) => {
+      const result = await adminActions.truncateCollection(input.database, input.collection)
+      return { truncated: true, deletedCount: result.deletedCount }
+    }),
+
   createCollection: procedure
     .input(z.object({ database: z.string(), collection: z.string() }))
     .mutation(async ({ input }) => {
