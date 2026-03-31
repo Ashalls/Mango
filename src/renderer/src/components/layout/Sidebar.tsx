@@ -66,6 +66,10 @@ export function Sidebar() {
       alert('Cannot paste into a production connection. Production connections are protected from mass write operations.')
       return
     }
+    if (targetProfile?.isReadOnly) {
+      alert('Cannot paste into a read-only connection. Disable Read Only in connection settings to allow writes.')
+      return
+    }
     setPasteTarget(targetConnectionId)
   }
 
@@ -181,6 +185,8 @@ export function Sidebar() {
                             canPaste={clipboard !== null}
                             onPasteDatabase={() => handlePasteDatabase(profile.id)}
                             isProduction={profile.isProduction}
+                            protectDropTruncate={profile.protectDropTruncate}
+                            isReadOnly={profile.isReadOnly}
                             claudeAccess={profile.claudeAccess}
                             claudeDbOverrides={profile.claudeDbOverrides}
                             databaseCodebasePaths={profile.databaseCodebasePaths}
@@ -249,7 +255,7 @@ export function Sidebar() {
                           Connect
                         </ContextMenu.Item>
                       )}
-                      {isThisConnected && !profile.isProduction && (
+                      {isThisConnected && !profile.isProduction && !profile.isReadOnly && (
                         <ContextMenu.Item
                           className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                           onSelect={() => setShowCreateDb(profile.id)}
@@ -258,7 +264,7 @@ export function Sidebar() {
                           Create Database
                         </ContextMenu.Item>
                       )}
-                      {isThisConnected && !profile.isProduction && (
+                      {isThisConnected && !profile.isProduction && !profile.isReadOnly && (
                         <ContextMenu.Item
                           className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                           onSelect={async () => {
@@ -328,14 +334,15 @@ export function Sidebar() {
                           <ContextMenu.Separator className="my-1 h-px bg-border" />
                           <ContextMenu.Item
                             className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent ${
-                              profile.isProduction ? 'text-muted-foreground' : ''
+                              profile.isProduction || profile.isReadOnly ? 'text-muted-foreground' : ''
                             }`}
                             onSelect={() => handlePasteDatabase(profile.id)}
-                            disabled={profile.isProduction}
+                            disabled={profile.isProduction || profile.isReadOnly}
                           >
                             <ClipboardPaste className="h-3.5 w-3.5" />
                             Paste "{clipboard.database}"
                             {profile.isProduction && ' (blocked)'}
+                            {!profile.isProduction && profile.isReadOnly && ' (read-only)'}
                           </ContextMenu.Item>
                         </>
                       )}

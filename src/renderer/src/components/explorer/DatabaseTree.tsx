@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal, Pencil, ExternalLink, RefreshCw } from 'lucide-react'
+import { ChevronRight, Database, Table2, Plus, Trash2, Loader2, Copy, ClipboardPaste, Eye, Download, Upload, Bot, FileUp, FolderOpen, X, MessageSquare, Terminal, Pencil, ExternalLink, RefreshCw, Eraser } from 'lucide-react'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { cn } from '@renderer/lib/utils'
 import { useExplorerStore } from '@renderer/store/explorerStore'
@@ -9,6 +9,7 @@ import type { DatabaseInfo } from '@shared/types'
 import { InsertDocumentsDialog } from '@renderer/components/data/InsertDocumentsDialog'
 import { ExportDatabaseDialog } from '@renderer/components/explorer/ExportDatabaseDialog'
 import { ImportDatabaseDialog } from '@renderer/components/explorer/ImportDatabaseDialog'
+import { ConfirmDestructiveDialog } from '@renderer/components/ui/confirm-destructive-dialog'
 
 interface DatabaseTreeProps {
   databases: DatabaseInfo[]
@@ -24,9 +25,11 @@ interface DatabaseTreeProps {
   databaseCodebasePaths?: Record<string, string>
   onSetDbCodebasePath?: (dbName: string) => void
   onClearDbCodebasePath?: (dbName: string) => void
+  protectDropTruncate?: boolean
+  isReadOnly?: boolean
 }
 
-export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath, onClearDbCodebasePath }: DatabaseTreeProps) {
+export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath, onClearDbCodebasePath, protectDropTruncate, isReadOnly }: DatabaseTreeProps) {
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set())
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
@@ -36,6 +39,9 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   const [insertTarget, setInsertTarget] = useState<{ db: string; col: string } | null>(null)
   const [exportDbTarget, setExportDbTarget] = useState<string | null>(null)
   const [importTarget, setImportTarget] = useState<{ db: string; importDir: string; collections: string[] } | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ db: string; col: string } | null>(null)
+  const [truncateTarget, setTruncateTarget] = useState<{ db: string; col: string } | null>(null)
+  const [dropDbTarget, setDropDbTarget] = useState<string | null>(null)
   const {
     collections,
     selectedDatabase,
@@ -89,7 +95,6 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   }
 
   const handleDropDatabase = async (dbName: string) => {
-    if (!confirm(`Drop database "${dbName}"? This cannot be undone.`)) return
     try {
       await trpc.admin.dropDatabase.mutate({ database: dbName })
       await loadDatabases()
@@ -99,12 +104,21 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
   }
 
   const handleDropCollection = async (dbName: string, colName: string) => {
-    if (!confirm(`Drop collection "${dbName}.${colName}"? This cannot be undone.`)) return
     try {
       await trpc.admin.dropCollection.mutate({ database: dbName, collection: colName })
       await loadCollections(dbName, connectionId)
     } catch (err) {
       alert(`Failed to drop collection: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  const handleTruncateCollection = async (dbName: string, colName: string) => {
+    try {
+      const result = await trpc.admin.truncateCollection.mutate({ database: dbName, collection: colName })
+      alert(`Truncated "${colName}": ${result.deletedCount} documents deleted`)
+      await loadCollections(dbName, connectionId)
+    } catch (err) {
+      alert(`Failed to truncate collection: ${err instanceof Error ? err.message : err}`)
     }
   }
 
@@ -190,16 +204,26 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                   Refresh Collections
                 </ContextMenu.Item>
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
-                <ContextMenu.Item
-                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
-                  onSelect={() => {
-                    setNewCollName({ db: db.name })
-                    if (!expandedDbs.has(db.name)) toggleDb(db.name)
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Collection
-                </ContextMenu.Item>
+                {isReadOnly ? (
+                  <ContextMenu.Item
+                    className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                    disabled
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New Collection
+                  </ContextMenu.Item>
+                ) : (
+                  <ContextMenu.Item
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                    onSelect={() => {
+                      setNewCollName({ db: db.name })
+                      if (!expandedDbs.has(db.name)) toggleDb(db.name)
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New Collection
+                  </ContextMenu.Item>
+                )}
                 <ContextMenu.Item
                   className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                   onSelect={() => openDatabaseTab(connectionId, db.name)}
@@ -308,7 +332,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                   <Download className="h-3.5 w-3.5" />
                   Export Database (dump)
                 </ContextMenu.Item>
-                {!isProduction && (
+                {!isProduction && !isReadOnly && (
                   <ContextMenu.Item
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                     onSelect={async () => {
@@ -327,23 +351,33 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                   </ContextMenu.Item>
                 )}
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
-                <ContextMenu.Item
-                  className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none ${
-                    isProduction
-                      ? 'text-muted-foreground'
-                      : 'text-destructive hover:bg-destructive/10'
-                  }`}
-                  onSelect={() => {
-                    if (isProduction) {
-                      alert('Cannot drop a database on a production connection.')
-                      return
-                    }
-                    handleDropDatabase(db.name)
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Drop Database {isProduction && '(blocked)'}
-                </ContextMenu.Item>
+                {isReadOnly ? (
+                  <ContextMenu.Item
+                    className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                    disabled
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Drop Database
+                  </ContextMenu.Item>
+                ) : (
+                  <ContextMenu.Item
+                    className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none ${
+                      isProduction
+                        ? 'text-muted-foreground'
+                        : 'text-destructive hover:bg-destructive/10'
+                    }`}
+                    onSelect={() => {
+                      if (isProduction) {
+                        alert('Cannot drop a database on a production connection.')
+                        return
+                      }
+                      setDropDbTarget(db.name)
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Drop Database {isProduction && '(blocked)'}
+                  </ContextMenu.Item>
+                )}
               </ContextMenu.Content>
             </ContextMenu.Portal>
           </ContextMenu.Root>
@@ -433,7 +467,15 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         <Download className="h-3.5 w-3.5" />
                         Export as CSV
                       </ContextMenu.Item>
-                      {!isProduction && (
+                      {isReadOnly ? (
+                        <ContextMenu.Item
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                          disabled
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          Import JSON
+                        </ContextMenu.Item>
+                      ) : !isProduction && (
                         <ContextMenu.Item
                           className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                           onSelect={async () => {
@@ -452,13 +494,23 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         </ContextMenu.Item>
                       )}
                       <ContextMenu.Separator className="my-1 h-px bg-border" />
-                      <ContextMenu.Item
-                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
-                        onSelect={() => setInsertTarget({ db: db.name, col: col.name })}
-                      >
-                        <FileUp className="h-3.5 w-3.5" />
-                        Insert Documents...
-                      </ContextMenu.Item>
+                      {isReadOnly ? (
+                        <ContextMenu.Item
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                          disabled
+                        >
+                          <FileUp className="h-3.5 w-3.5" />
+                          Insert Documents...
+                        </ContextMenu.Item>
+                      ) : (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => setInsertTarget({ db: db.name, col: col.name })}
+                        >
+                          <FileUp className="h-3.5 w-3.5" />
+                          Insert Documents...
+                        </ContextMenu.Item>
+                      )}
                       <ContextMenu.Item
                         className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                         onSelect={async () => {
@@ -473,23 +525,60 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         Open mongosh
                       </ContextMenu.Item>
                       <ContextMenu.Separator className="my-1 h-px bg-border" />
-                      <ContextMenu.Item
-                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
-                        onSelect={() => {
-                          setRenameTarget({ db: db.name, col: col.name })
-                          setRenameInput(col.name)
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Rename Collection
-                      </ContextMenu.Item>
-                      <ContextMenu.Item
-                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none hover:bg-destructive/10"
-                        onSelect={() => handleDropCollection(db.name, col.name)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Drop Collection
-                      </ContextMenu.Item>
+                      {isReadOnly ? (
+                        <ContextMenu.Item
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                          disabled
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Rename Collection
+                        </ContextMenu.Item>
+                      ) : (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => {
+                            setRenameTarget({ db: db.name, col: col.name })
+                            setRenameInput(col.name)
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Rename Collection
+                        </ContextMenu.Item>
+                      )}
+                      {!protectDropTruncate && (isReadOnly ? (
+                        <ContextMenu.Item
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                          disabled
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Drop Collection
+                        </ContextMenu.Item>
+                      ) : (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none hover:bg-destructive/10"
+                          onSelect={() => setDropTarget({ db: db.name, col: col.name })}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Drop Collection
+                        </ContextMenu.Item>
+                      ))}
+                      {!protectDropTruncate && (isReadOnly ? (
+                        <ContextMenu.Item
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
+                          disabled
+                        >
+                          <Eraser className="h-3.5 w-3.5" />
+                          Truncate Collection
+                        </ContextMenu.Item>
+                      ) : (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-amber-500 outline-none hover:bg-amber-500/10"
+                          onSelect={() => setTruncateTarget({ db: db.name, col: col.name })}
+                        >
+                          <Eraser className="h-3.5 w-3.5" />
+                          Truncate Collection
+                        </ContextMenu.Item>
+                      ))}
                     </ContextMenu.Content>
                   </ContextMenu.Portal>
                 </ContextMenu.Root>
@@ -623,6 +712,45 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
             }
           }}
           onCancel={() => setImportTarget(null)}
+        />
+      )}
+      {dropTarget && (
+        <ConfirmDestructiveDialog
+          title="Drop Collection"
+          description={`This will permanently delete the collection "${dropTarget.col}" and all its documents from database "${dropTarget.db}". This cannot be undone.`}
+          confirmText={dropTarget.col}
+          confirmLabel="Drop Collection"
+          onConfirm={() => {
+            handleDropCollection(dropTarget.db, dropTarget.col)
+            setDropTarget(null)
+          }}
+          onCancel={() => setDropTarget(null)}
+        />
+      )}
+      {truncateTarget && (
+        <ConfirmDestructiveDialog
+          title="Truncate Collection"
+          description={`This will delete ALL documents from "${truncateTarget.col}" in database "${truncateTarget.db}". The collection, its indexes, and metadata will be preserved. This cannot be undone.`}
+          confirmText={truncateTarget.col}
+          confirmLabel="Truncate Collection"
+          onConfirm={() => {
+            handleTruncateCollection(truncateTarget.db, truncateTarget.col)
+            setTruncateTarget(null)
+          }}
+          onCancel={() => setTruncateTarget(null)}
+        />
+      )}
+      {dropDbTarget && (
+        <ConfirmDestructiveDialog
+          title="Drop Database"
+          description={`This will permanently delete the database "${dropDbTarget}" and ALL its collections. This cannot be undone.`}
+          confirmText={dropDbTarget}
+          confirmLabel="Drop Database"
+          onConfirm={() => {
+            handleDropDatabase(dropDbTarget)
+            setDropDbTarget(null)
+          }}
+          onCancel={() => setDropDbTarget(null)}
         />
       )}
     </div>
