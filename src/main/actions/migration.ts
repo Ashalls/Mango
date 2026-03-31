@@ -196,6 +196,12 @@ export async function copyDatabase(options: CopyDatabaseOptions): Promise<void> 
         'Production connections are protected from mass write operations.'
     )
   }
+  if (targetProfile?.isReadOnly) {
+    throw new Error(
+      `Cannot copy to "${targetProfile.name}" — it is marked as read-only. ` +
+        'Disable Read Only in connection settings to allow writes.'
+    )
+  }
 
   const sourceProfile = connections.find((c) => c.id === options.sourceConnectionId)
   if (!sourceProfile || !targetProfile) throw new Error('Connection not found')

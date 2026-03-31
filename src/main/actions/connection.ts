@@ -87,3 +87,21 @@ export function getStatus(): ConnectionState & { connectedIds: string[] } {
   }
   return { profileId: activeId, status: 'connected', connectedIds }
 }
+
+/**
+ * Check if the active connection is marked as read-only.
+ * Returns an error message if blocked, null if allowed.
+ */
+export function checkReadOnly(): string | null {
+  const activeId = mongoService.getActiveConnectionId()
+  if (!activeId) return null
+
+  const connections = configService.loadConnections()
+  const profile = connections.find((c) => c.id === activeId)
+  if (!profile) return null
+
+  if (profile.isReadOnly) {
+    return `This connection ("${profile.name}") is read-only. Disable Read Only in connection settings to allow writes.`
+  }
+  return null
+}

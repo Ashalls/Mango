@@ -1,10 +1,13 @@
 import { router, procedure, z } from '../context'
 import * as adminActions from '../../actions/admin'
+import * as connectionActions from '../../actions/connection'
 
 export const adminRouter = router({
   dropDatabase: procedure
     .input(z.object({ database: z.string() }))
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       await adminActions.dropDatabase(input.database)
       return { dropped: true }
     }),
@@ -12,6 +15,8 @@ export const adminRouter = router({
   dropCollection: procedure
     .input(z.object({ database: z.string(), collection: z.string() }))
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       await adminActions.dropCollection(input.database, input.collection)
       return { dropped: true }
     }),
@@ -19,6 +24,8 @@ export const adminRouter = router({
   truncateCollection: procedure
     .input(z.object({ database: z.string(), collection: z.string() }))
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       const result = await adminActions.truncateCollection(input.database, input.collection)
       return { truncated: true, deletedCount: result.deletedCount }
     }),
@@ -26,6 +33,8 @@ export const adminRouter = router({
   createCollection: procedure
     .input(z.object({ database: z.string(), collection: z.string() }))
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       await adminActions.createCollection(input.database, input.collection)
       return { created: true }
     }),
@@ -33,6 +42,8 @@ export const adminRouter = router({
   renameCollection: procedure
     .input(z.object({ database: z.string(), oldName: z.string(), newName: z.string() }))
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       await adminActions.renameCollection(input.database, input.oldName, input.newName)
       return { renamed: true }
     }),

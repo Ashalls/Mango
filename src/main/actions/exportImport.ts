@@ -816,6 +816,7 @@ export async function importDatabaseDump(
   const connections = configService.loadConnections()
   const profile = connections.find((c) => c.id === connectionId)
   if (profile?.isProduction) throw new Error('Cannot import to a production connection')
+  if (profile?.isReadOnly) throw new Error('Cannot import to a read-only connection')
 
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
@@ -937,6 +938,7 @@ export async function importDatabaseFromDump(
   const connections = configService.loadConnections()
   const profile = connections.find((c) => c.id === connectionId)
   if (profile?.isProduction) throw new Error('Cannot import to a production connection')
+  if (profile?.isReadOnly) throw new Error('Cannot import to a read-only connection')
   if (!profile) throw new Error('Connection not found')
 
   // Try mongorestore first (only for full database imports)

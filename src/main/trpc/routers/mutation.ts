@@ -1,6 +1,7 @@
 import { router, procedure, z } from '../context'
 import * as mutationActions from '../../actions/mutation'
 import * as changelog from '../../services/changelog'
+import * as connectionActions from '../../actions/connection'
 
 export const mutationRouter = router({
   insertOne: procedure
@@ -12,6 +13,8 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       return mutationActions.insertOne(input.database, input.collection, input.document)
     }),
 
@@ -25,6 +28,8 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       return mutationActions.updateOne(input.database, input.collection, input.filter, input.update)
     }),
 
@@ -37,6 +42,8 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       return mutationActions.deleteOne(input.database, input.collection, input.filter)
     }),
 
@@ -49,6 +56,8 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       return mutationActions.deleteMany(input.database, input.collection, input.filter)
     }),
 
@@ -61,6 +70,8 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       const result = await mutationActions.insertMany(input.database, input.collection, input.documents)
       changelog.appendChangeLog({
         source: 'user', connectionId: '', connectionName: '',
@@ -80,6 +91,8 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
       const result = await mutationActions.updateMany(
         input.database, input.collection, input.filter, input.update
       )
