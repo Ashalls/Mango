@@ -35,6 +35,11 @@ function checkWriteAccess(database?: string): string | null {
   const profile = connections.find((c) => c.id === activeId)
   if (!profile) return 'Connection profile not found'
 
+  // Read-only connections block all writes, no per-database override
+  if (profile.isReadOnly) {
+    return `BLOCKED: connection "${profile.name}" is marked as read-only. All mutations are blocked. The user must disable Read Only in connection settings to allow writes.`
+  }
+
   // Determine effective access: per-database override takes priority over connection default
   const connectionDefault = profile.claudeAccess || (profile.isProduction ? 'readonly' : 'readwrite')
   const effectiveAccess = (database && profile.claudeDbOverrides?.[database]) || connectionDefault
@@ -60,8 +65,9 @@ function getConnectionsSummary(): string {
     const connected = connectedIds.includes(c.id) ? 'CONNECTED' : 'disconnected'
     const active = c.id === activeId ? ' (ACTIVE)' : ''
     const prod = c.isProduction ? ' [PRODUCTION]' : ''
+    const readOnly = c.isReadOnly ? ' [READ-ONLY]' : ''
     const access = `claude:${c.claudeAccess || (c.isProduction ? 'readonly' : 'readwrite')}`
-    return `- ${c.name}${active}: ${connected}${prod} (${access})`
+    return `- ${c.name}${active}: ${connected}${prod}${readOnly} (${access})`
   })
 
   return lines.join('\n')

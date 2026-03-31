@@ -72,6 +72,7 @@ function buildSystemPrompt(context: ChatContext): string {
     '- If a database has a per-database override of [claude:readwrite], you ARE allowed to write to it — just call the tool directly.',
     '- Do NOT refuse writes if the database has a [claude:readwrite] override. The override explicitly grants permission.',
     '- NEVER write to a connection/database marked [PRODUCTION] unless it has an explicit [claude:readwrite] override.',
+    '- Connections marked [READ-ONLY] block ALL writes regardless of Claude access settings or per-database overrides.',
     '- If asked to copy data, you may READ from production but NEVER WRITE to it (unless overridden).',
     '- You can switch between connections using mongo_switch_connection.',
     '- When the user asks you to modify data, just do it. Do not ask for confirmation on non-production databases with readwrite access.',
@@ -83,8 +84,9 @@ function buildSystemPrompt(context: ChatContext): string {
     const connected = connectedIds.includes(c.id) ? 'CONNECTED' : 'disconnected'
     const active = c.id === activeId ? ' (ACTIVE - currently focused)' : ''
     const prod = c.isProduction ? ' [PRODUCTION]' : ''
+    const readOnly = c.isReadOnly ? ' [READ-ONLY]' : ''
     const defaultAccess = c.claudeAccess || (c.isProduction ? 'readonly' : 'readwrite')
-    lines.push(`- ${c.name} (id: ${c.id}): ${connected}${active}${prod} [claude-default:${defaultAccess}]`)
+    lines.push(`- ${c.name} (id: ${c.id}): ${connected}${active}${prod}${readOnly} [claude-default:${defaultAccess}]`)
 
     // Show per-database overrides
     if (c.claudeDbOverrides && Object.keys(c.claudeDbOverrides).length > 0) {
