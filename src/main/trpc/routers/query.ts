@@ -56,16 +56,37 @@ export const queryRouter = router({
       return queryActions.distinct(input.database, input.collection, input.field, input.filter)
     }),
 
+  aggregateWithStagePreview: procedure
+    .input(
+      z.object({
+        database: z.string(),
+        collection: z.string(),
+        pipeline: z.array(z.record(z.unknown())),
+        stageIndex: z.number(),
+        sampleSize: z.number().optional().default(20)
+      })
+    )
+    .query(async ({ input }) => {
+      return queryActions.aggregateWithStagePreview(
+        input.database,
+        input.collection,
+        input.pipeline,
+        input.stageIndex,
+        input.sampleSize
+      )
+    }),
+
   explain: procedure
     .input(
       z.object({
         database: z.string(),
         collection: z.string(),
-        filter: z.record(z.unknown()).optional().default({})
+        filter: z.record(z.unknown()).optional().default({}),
+        pipeline: z.array(z.record(z.unknown())).optional()
       })
     )
     .query(async ({ input }) => {
-      return queryActions.explain(input.database, input.collection, input.filter)
+      return queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
     }),
 
   getHistory: procedure
