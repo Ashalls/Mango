@@ -6,11 +6,32 @@ import { DocumentTable } from './DocumentTable'
 import { BulkToolbar } from './BulkToolbar'
 import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
+import { AggregationEditor } from '@renderer/components/aggregation/AggregationEditor'
+import { VisualExplain } from '@renderer/components/explain/VisualExplain'
+import { trpc } from '@renderer/lib/trpc'
 import { MessageSquare } from 'lucide-react'
+import type { ExplainPlan } from '@shared/types'
 
 export function MainPanel() {
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
-  const [subTab, setSubTab] = useState<'documents' | 'indexes'>('documents')
+  const [subTab, setSubTab] = useState<'documents' | 'aggregation' | 'explain' | 'indexes'>('documents')
+  const [viewMode, setViewMode] = useState<'table' | 'tree' | 'json'>('table')
+  const [explainPlan, setExplainPlan] = useState<ExplainPlan | null>(null)
+
+  const runExplain = async () => {
+    if (!activeTab) return
+    try {
+      const result = await trpc.query.parsedExplain.query({
+        database: activeTab.database,
+        collection: activeTab.collection,
+        filter: activeTab.filter
+      })
+      setExplainPlan(result)
+      setSubTab('explain')
+    } catch (err) {
+      console.error('Failed to run explain:', err)
+    }
+  }
 
   // Reset to documents tab when the active tab changes
   useEffect(() => {
@@ -46,6 +67,32 @@ export function MainPanel() {
                 </button>
                 <button
                   className={`relative px-3 py-1 text-xs font-medium transition-colors ${
+                    subTab === 'aggregation'
+                      ? 'text-emerald-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setSubTab('aggregation')}
+                >
+                  Aggregation
+                  {subTab === 'aggregation' && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400" />
+                  )}
+                </button>
+                <button
+                  className={`relative px-3 py-1 text-xs font-medium transition-colors ${
+                    subTab === 'explain'
+                      ? 'text-emerald-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={runExplain}
+                >
+                  Explain
+                  {subTab === 'explain' && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400" />
+                  )}
+                </button>
+                <button
+                  className={`relative px-3 py-1 text-xs font-medium transition-colors ${
                     subTab === 'indexes'
                       ? 'text-emerald-400'
                       : 'text-muted-foreground hover:text-foreground'
@@ -57,21 +104,43 @@ export function MainPanel() {
                     <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400" />
                   )}
                 </button>
+
               </div>
 
               {subTab === 'documents' ? (
                 <>
                   <QueryBuilder />
                   <BulkToolbar />
-                  <div className={activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
-                    <DocumentTable />
+                  <div className={viewMode === 'table' && activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
+                    <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
                   </div>
-                  {activeTab.selectedDocument && (
+                  {viewMode === 'table' && activeTab.selectedDocument && (
                     <div className="h-1/2 min-h-0">
                       <DocumentEditor />
                     </div>
                   )}
                 </>
+              ) : subTab === 'aggregation' ? (
+                <>
+                  <div className={activeTab.results ? 'flex-1 min-h-0' : 'flex-1 min-h-0'}>
+                    <AggregationEditor />
+                  </div>
+                  {activeTab.results && (
+                    <div className="h-2/5 min-h-0 border-t border-border">
+                      <DocumentTable />
+                    </div>
+                  )}
+                </>
+              ) : subTab === 'explain' ? (
+                <div className="flex-1 min-h-0">
+                  {explainPlan ? (
+                    <VisualExplain plan={explainPlan} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      Run a query first, then click Explain
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="flex-1 overflow-auto">
                   <IndexPanel />

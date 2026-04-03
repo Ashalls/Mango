@@ -309,6 +309,48 @@ export function registerTools(server: McpServer): void {
     return { content: [{ type: 'text', text: JSON.stringify(plan, null, 2) }] }
   })
 
+  server.registerTool('mongo_aggregate_preview', {
+    description: 'Preview the output of an aggregation pipeline up to a specific stage index. Useful for debugging pipelines stage by stage.',
+    inputSchema: {
+      database: z.string().describe('Database name'),
+      collection: z.string().describe('Collection name'),
+      pipeline: z.array(z.record(z.unknown())).describe('Full aggregation pipeline array'),
+      stageIndex: z.number().describe('Zero-based index of the stage to preview up to'),
+      sampleSize: z.number().default(10).describe('Max documents to return in preview')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ database, collection, pipeline, stageIndex, sampleSize }) => {
+    const result = await queryActions.aggregateWithStagePreview(
+      database, collection, pipeline, stageIndex, sampleSize
+    )
+    return {
+      content: [{ type: 'text', text: `Stage ${stageIndex} output (${result.count} total docs):\n${JSON.stringify(result.documents, null, 2)}` }]
+    }
+  })
+
+  server.registerTool('mongo_value_search', {
+    description: 'Search for a text value across all fields in collections. Useful for finding where a specific value appears in the database.',
+    inputSchema: {
+      searchTerm: z.string().describe('Text to search for'),
+      scope: z.enum(['server', 'database', 'collection']).describe('Search scope'),
+      database: z.string().optional().describe('Database name (required for database/collection scope)'),
+      collection: z.string().optional().describe('Collection name (required for collection scope)'),
+      caseInsensitive: z.boolean().default(true).describe('Case-insensitive search'),
+      maxResults: z.number().default(50).describe('Maximum results to return')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ searchTerm, scope, database, collection, caseInsensitive, maxResults }) => {
+    const results = await queryActions.valueSearch(
+      searchTerm,
+      { type: scope, database, collection },
+      { regex: false, caseInsensitive, maxResults }
+    )
+    const summary = results.map((r) => `${r.database}.${r.collection} | _id:${r.documentId} | ${r.fieldPath}: ${r.matchedValue}`).join('\n')
+    return {
+      content: [{ type: 'text', text: `Found ${results.length} matches:\n${summary}` }]
+    }
+  })
+
   // --- Mutation tools (with write access checks) ---
   // Helper to get connection info for logging
   function getActiveConnectionInfo() {

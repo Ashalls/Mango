@@ -111,3 +111,62 @@ export interface CollectionProgress {
   total: number
   error?: string
 }
+
+// --- Aggregation Editor types ---
+
+export interface AggregationStage {
+  id: string
+  type: string        // e.g., "$match", "$group", "$project"
+  content: string     // JSON string of stage body
+  enabled: boolean
+  order: number
+}
+
+export interface StagePreviewResult {
+  documents: Record<string, unknown>[]
+  count: number
+}
+
+// --- Visual Explain types ---
+
+export interface ExplainStageNode {
+  id: string
+  type: string              // IXSCAN, FETCH, SORT, COLLSCAN, etc.
+  executionTimeMs: number
+  docsExamined: number
+  docsReturned: number
+  keysExamined: number
+  indexName?: string
+  indexKeyPattern?: Record<string, 1 | -1>
+  filter?: Record<string, unknown>
+  memoryUsageBytes?: number
+  children: ExplainStageNode[]
+  efficiency: 'good' | 'moderate' | 'poor'
+}
+
+export interface ExplainPlan {
+  stages: ExplainStageNode[]
+  totalExecutionTimeMs: number
+  winningPlan: string
+  rejectedPlansCount: number
+  indexSuggestion?: string
+  raw: Record<string, unknown>
+}
+
+// --- Value Search types ---
+
+export interface ValueSearchResult {
+  database: string
+  collection: string
+  documentId: string
+  fieldPath: string
+  matchedValue: string
+}
+
+export interface ValueSearchProgress {
+  collectionsScanned: number
+  collectionsTotal: number
+  resultsFound: number
+  currentCollection: string
+  done: boolean
+}

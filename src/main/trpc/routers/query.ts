@@ -1,6 +1,7 @@
 import { router, procedure, z } from '../context'
 import * as queryActions from '../../actions/query'
 import * as queryHistory from '../../services/queryHistory'
+import { parseExplainResult } from '../../services/explainParser'
 
 export const queryRouter = router({
   find: procedure
@@ -56,16 +57,73 @@ export const queryRouter = router({
       return queryActions.distinct(input.database, input.collection, input.field, input.filter)
     }),
 
+  aggregateWithStagePreview: procedure
+    .input(
+      z.object({
+        database: z.string(),
+        collection: z.string(),
+        pipeline: z.array(z.record(z.unknown())),
+        stageIndex: z.number(),
+        sampleSize: z.number().optional().default(20)
+      })
+    )
+    .query(async ({ input }) => {
+      return queryActions.aggregateWithStagePreview(
+        input.database,
+        input.collection,
+        input.pipeline,
+        input.stageIndex,
+        input.sampleSize
+      )
+    }),
+
   explain: procedure
     .input(
       z.object({
         database: z.string(),
         collection: z.string(),
-        filter: z.record(z.unknown()).optional().default({})
+        filter: z.record(z.unknown()).optional().default({}),
+        pipeline: z.array(z.record(z.unknown())).optional()
       })
     )
     .query(async ({ input }) => {
-      return queryActions.explain(input.database, input.collection, input.filter)
+      return queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
+    }),
+
+  parsedExplain: procedure
+    .input(
+      z.object({
+        database: z.string(),
+        collection: z.string(),
+        filter: z.record(z.unknown()).optional().default({}),
+        pipeline: z.array(z.record(z.unknown())).optional()
+      })
+    )
+    .query(async ({ input }) => {
+      const raw = await queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
+      return parseExplainResult(raw)
+    }),
+
+  valueSearch: procedure
+    .input(
+      z.object({
+        searchTerm: z.string(),
+        scope: z.object({
+          type: z.enum(['server', 'database', 'collection']),
+          database: z.string().optional(),
+          collection: z.string().optional()
+        }),
+        regex: z.boolean().optional().default(false),
+        caseInsensitive: z.boolean().optional().default(true),
+        maxResults: z.number().optional().default(200)
+      })
+    )
+    .query(async ({ input }) => {
+      return queryActions.valueSearch(
+        input.searchTerm,
+        input.scope,
+        { regex: input.regex, caseInsensitive: input.caseInsensitive, maxResults: input.maxResults }
+      )
     }),
 
   getHistory: procedure
