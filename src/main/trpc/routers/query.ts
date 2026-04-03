@@ -104,6 +104,28 @@ export const queryRouter = router({
       return parseExplainResult(raw)
     }),
 
+  valueSearch: procedure
+    .input(
+      z.object({
+        searchTerm: z.string(),
+        scope: z.object({
+          type: z.enum(['server', 'database', 'collection']),
+          database: z.string().optional(),
+          collection: z.string().optional()
+        }),
+        regex: z.boolean().optional().default(false),
+        caseInsensitive: z.boolean().optional().default(true),
+        maxResults: z.number().optional().default(200)
+      })
+    )
+    .query(async ({ input }) => {
+      return queryActions.valueSearch(
+        input.searchTerm,
+        input.scope,
+        { regex: input.regex, caseInsensitive: input.caseInsensitive, maxResults: input.maxResults }
+      )
+    }),
+
   getHistory: procedure
     .query(async () => {
       return queryHistory.loadHistory()

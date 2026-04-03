@@ -328,6 +328,29 @@ export function registerTools(server: McpServer): void {
     }
   })
 
+  server.registerTool('mongo_value_search', {
+    description: 'Search for a text value across all fields in collections. Useful for finding where a specific value appears in the database.',
+    inputSchema: {
+      searchTerm: z.string().describe('Text to search for'),
+      scope: z.enum(['server', 'database', 'collection']).describe('Search scope'),
+      database: z.string().optional().describe('Database name (required for database/collection scope)'),
+      collection: z.string().optional().describe('Collection name (required for collection scope)'),
+      caseInsensitive: z.boolean().default(true).describe('Case-insensitive search'),
+      maxResults: z.number().default(50).describe('Maximum results to return')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ searchTerm, scope, database, collection, caseInsensitive, maxResults }) => {
+    const results = await queryActions.valueSearch(
+      searchTerm,
+      { type: scope, database, collection },
+      { regex: false, caseInsensitive, maxResults }
+    )
+    const summary = results.map((r) => `${r.database}.${r.collection} | _id:${r.documentId} | ${r.fieldPath}: ${r.matchedValue}`).join('\n')
+    return {
+      content: [{ type: 'text', text: `Found ${results.length} matches:\n${summary}` }]
+    }
+  })
+
   // --- Mutation tools (with write access checks) ---
   // Helper to get connection info for logging
   function getActiveConnectionInfo() {
