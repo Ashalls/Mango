@@ -97,7 +97,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     try {
       if (mode === 'currentOp') {
         // Use app-level query log — records all queries with timing
-        const data = await trpc.profiler.getAppLog.query({ limit: 100, namespace: `${database}.` })
+        const data = await trpc.profiler.getAppLog.query({ limit: 200 })
         setEntries(data as ProfilerEntry[])
       } else if (mode === 'native') {
         const data = await trpc.profiler.getData.query({ database, limit: 100 })
@@ -371,6 +371,13 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
           <Activity className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1">{error}</span>
           <button className="shrink-0 text-amber-400 hover:text-amber-200" onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+
+      {/* Empty state hint for app-level mode */}
+      {mode === 'currentOp' && entries.length === 0 && !loading && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          Open a collection and run queries — they&apos;ll appear here with timing data.
         </div>
       )}
 
