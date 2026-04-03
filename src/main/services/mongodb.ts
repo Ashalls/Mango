@@ -1,4 +1,6 @@
 import { MongoClient, type Db } from 'mongodb'
+import * as sshTunnel from './sshTunnel'
+import type { SSHConfig, TLSConfig } from '@shared/types'
 
 /** Map of connection profile ID → MongoClient */
 const clients = new Map<string, MongoClient>()
@@ -6,12 +8,39 @@ const clients = new Map<string, MongoClient>()
 /** The currently "active" connection ID (shown in main UI) */
 let activeConnectionId: string | null = null
 
-export async function connect(id: string, uri: string): Promise<void> {
-  // If already connected with this id, close first
+export async function connect(
+  id: string,
+  uri: string,
+  sshConfig?: SSHConfig,
+  tlsConfig?: TLSConfig
+): Promise<void> {
   if (clients.has(id)) {
-    await clients.get(id)!.close()
+    await disconnect(id)
   }
-  const client = new MongoClient(uri)
+
+  let connectUri = uri
+
+  if (sshConfig?.enabled) {
+    const url = new URL(uri)
+    const mongoHost = url.hostname
+    const mongoPort = parseInt(url.port) || 27017
+    const localPort = await sshTunnel.createTunnel(id, sshConfig, mongoHost, mongoPort)
+    url.hostname = '127.0.0.1'
+    url.port = String(localPort)
+    connectUri = url.toString()
+  }
+
+  const options: Record<string, unknown> = {}
+  if (tlsConfig?.enabled) {
+    options.tls = true
+    if (tlsConfig.caFile) options.tlsCAFile = tlsConfig.caFile
+    if (tlsConfig.certificateKeyFile) options.tlsCertificateKeyFile = tlsConfig.certificateKeyFile
+    if (tlsConfig.certificateKeyFilePassword) options.tlsCertificateKeyFilePassword = tlsConfig.certificateKeyFilePassword
+    if (tlsConfig.allowInvalidHostnames) options.tlsAllowInvalidHostnames = true
+    if (tlsConfig.allowInvalidCertificates) options.tlsAllowInvalidCertificates = true
+  }
+
+  const client = new MongoClient(connectUri, options)
   await client.connect()
   clients.set(id, client)
 }
@@ -24,6 +53,7 @@ export async function disconnect(id: string): Promise<void> {
     if (activeConnectionId === id) {
       activeConnectionId = null
     }
+    await sshTunnel.destroyTunnel(id)
   }
 }
 
@@ -33,6 +63,7 @@ export async function disconnectAll(): Promise<void> {
   }
   clients.clear()
   activeConnectionId = null
+  await sshTunnel.destroyAllTunnels()
 }
 
 export function getClient(id?: string): MongoClient {

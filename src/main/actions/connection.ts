@@ -57,7 +57,7 @@ export async function connect(id: string): Promise<ConnectionState> {
   }
 
   try {
-    await mongoService.connect(id, profile.uri)
+    await mongoService.connect(id, profile.uri, profile.sshConfig, profile.tlsConfig)
     mongoService.setActiveConnectionId(id)
     return { profileId: id, status: 'connected' }
   } catch (err) {
