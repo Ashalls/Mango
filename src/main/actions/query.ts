@@ -123,3 +123,85 @@ export async function explain(
     .explain('allPlansExecution')
   return result as unknown as Record<string, unknown>
 }
+
+export async function valueSearch(
+  searchTerm: string,
+  scope: { type: 'server' | 'database' | 'collection'; database?: string; collection?: string },
+  options: { regex: boolean; caseInsensitive: boolean; maxResults: number }
+): Promise<
+  { database: string; collection: string; documentId: string; fieldPath: string; matchedValue: string }[]
+> {
+  const results: {
+    database: string
+    collection: string
+    documentId: string
+    fieldPath: string
+    matchedValue: string
+  }[] = []
+
+  const collectionsToSearch: { database: string; collection: string }[] = []
+
+  if (scope.type === 'collection' && scope.database && scope.collection) {
+    collectionsToSearch.push({ database: scope.database, collection: scope.collection })
+  } else if (scope.type === 'database' && scope.database) {
+    const db = mongoService.getDb(scope.database)
+    const cols = await db.listCollections().toArray()
+    for (const col of cols) {
+      if (col.type !== 'view') collectionsToSearch.push({ database: scope.database, collection: col.name })
+    }
+  } else {
+    const admin = mongoService.getDb('admin').admin()
+    const dbList = await admin.listDatabases()
+    for (const dbInfo of dbList.databases) {
+      if (['admin', 'local', 'config'].includes(dbInfo.name)) continue
+      const db = mongoService.getDb(dbInfo.name)
+      const cols = await db.listCollections().toArray()
+      for (const col of cols) {
+        if (col.type !== 'view') collectionsToSearch.push({ database: dbInfo.name, collection: col.name })
+      }
+    }
+  }
+
+  for (const { database, collection } of collectionsToSearch) {
+    if (results.length >= options.maxResults) break
+
+    const db = mongoService.getDb(database)
+    const col = db.collection(collection)
+
+    const sample = await col.aggregate([{ $sample: { size: 10 } }]).toArray()
+    const stringFields = new Set<string>()
+    for (const doc of sample) {
+      for (const [key, val] of Object.entries(doc)) {
+        if (typeof val === 'string') stringFields.add(key)
+      }
+    }
+
+    if (stringFields.size === 0) continue
+
+    const regexFlags = options.caseInsensitive ? 'i' : ''
+    const pattern = options.regex ? searchTerm : searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+    const orConditions = Array.from(stringFields).map((field) => ({
+      [field]: { $regex: pattern, $options: regexFlags }
+    }))
+
+    const remaining = options.maxResults - results.length
+    const docs = await col.find({ $or: orConditions }).limit(remaining).toArray()
+
+    for (const doc of docs) {
+      const docId = String(doc._id)
+      for (const field of stringFields) {
+        const val = doc[field]
+        if (typeof val !== 'string') continue
+        const re = new RegExp(pattern, regexFlags)
+        if (re.test(val)) {
+          results.push({ database, collection, documentId: docId, fieldPath: field, matchedValue: val })
+          if (results.length >= options.maxResults) break
+        }
+      }
+      if (results.length >= options.maxResults) break
+    }
+  }
+
+  return results
+}
