@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Play, Copy, Check } from 'lucide-react'
+import { Play, Copy, Check, Code } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
 import { StageList } from './StageList'
 import { StageEditor } from './StageEditor'
 import { StagePreview } from './StagePreview'
+import { CodeGenModal } from '@renderer/components/codegen/CodeGenModal'
 import type { AggregationStage } from '@shared/types'
 
 function buildPipeline(stages: AggregationStage[]): Record<string, unknown>[] {
@@ -24,6 +25,7 @@ export function AggregationEditor() {
   const [error, setError] = useState<string | null>(null)
   const [resultCount, setResultCount] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
+  const [codegenOpen, setCodegenOpen] = useState(false)
 
   if (!tab || tab.scope !== 'collection') return null
 
@@ -110,6 +112,17 @@ export function AggregationEditor() {
           {copied ? 'Copied' : 'Copy JSON'}
         </Button>
 
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => setCodegenOpen(true)}
+          title="Generate code for this pipeline"
+        >
+          <Code className="mr-1 h-3 w-3" />
+          Code
+        </Button>
+
         {resultCount !== null && !error && (
           <span className="text-xs text-muted-foreground">{resultCount} documents</span>
         )}
@@ -118,6 +131,13 @@ export function AggregationEditor() {
           <span className="flex-1 truncate text-xs text-destructive">{error}</span>
         )}
       </div>
+
+      <CodeGenModal
+        open={codegenOpen}
+        onClose={() => setCodegenOpen(false)}
+        type="aggregate"
+        pipeline={buildPipeline(stages)}
+      />
     </div>
   )
 }
