@@ -1,6 +1,7 @@
 import { router, procedure, z } from '../context'
 import * as queryActions from '../../actions/query'
 import * as queryHistory from '../../services/queryHistory'
+import { parseExplainResult } from '../../services/explainParser'
 
 export const queryRouter = router({
   find: procedure
@@ -87,6 +88,20 @@ export const queryRouter = router({
     )
     .query(async ({ input }) => {
       return queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
+    }),
+
+  parsedExplain: procedure
+    .input(
+      z.object({
+        database: z.string(),
+        collection: z.string(),
+        filter: z.record(z.unknown()).optional().default({}),
+        pipeline: z.array(z.record(z.unknown())).optional()
+      })
+    )
+    .query(async ({ input }) => {
+      const raw = await queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
+      return parseExplainResult(raw)
     }),
 
   getHistory: procedure
