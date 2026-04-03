@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community'
 import type { ColDef, GridReadyEvent, RowClickedEvent } from 'ag-grid-community'
-import { RefreshCw, Trash2, Play, Copy, ExternalLink, Activity } from 'lucide-react'
+import { RefreshCw, Trash2, Play, Square, Copy, ExternalLink, Activity } from 'lucide-react'
 import { trpc } from '@renderer/lib/trpc'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { useTabStore } from '@renderer/store/tabStore'
@@ -30,38 +30,60 @@ const REFRESH_INTERVALS: Record<AutoRefresh, number | null> = {
   '30s': 30000
 }
 
+// Module-level cache so profiler state persists across tab switches
+interface ProfilerCache {
+  level: ProfilingLevel
+  slowms: number
+  autoRefresh: AutoRefresh
+  entries: ProfilerEntry[]
+  selectedEntry: ProfilerEntry | null
+  supported: boolean
+  status: { was: number; slowms: number } | null
+}
+const stateCache = new Map<string, ProfilerCache>()
+
 export function QueryProfiler({ database }: QueryProfilerProps) {
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
   const openTab = useTabStore((s) => s.openTab)
   const tabs = useTabStore((s) => s.tabs)
 
-  // Controls state
-  const [level, setLevel] = useState<ProfilingLevel>(0)
-  const [slowms, setSlowms] = useState(100)
-  const [status, setStatus] = useState<{ was: number; slowms: number } | null>(null)
-  const [applyLoading, setApplyLoading] = useState(false)
-  const [autoRefresh, setAutoRefresh] = useState<AutoRefresh>('off')
+  // Restore from cache or use defaults
+  const cached = stateCache.get(database)
 
-  // Data state
-  const [entries, setEntries] = useState<ProfilerEntry[]>([])
+  const [level, setLevel] = useState<ProfilingLevel>(cached?.level ?? 0)
+  const [slowms, setSlowms] = useState(cached?.slowms ?? 100)
+  const [status, setStatus] = useState<{ was: number; slowms: number } | null>(cached?.status ?? null)
+  const [applyLoading, setApplyLoading] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState<AutoRefresh>(cached?.autoRefresh ?? 'off')
+  const [supported, setSupported] = useState(cached?.supported ?? true)
+
+  const [entries, setEntries] = useState<ProfilerEntry[]>(cached?.entries ?? [])
   const [loading, setLoading] = useState(false)
-  const [selectedEntry, setSelectedEntry] = useState<ProfilerEntry | null>(null)
+  const [selectedEntry, setSelectedEntry] = useState<ProfilerEntry | null>(cached?.selectedEntry ?? null)
   const [clearLoading, setClearLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Fetch profiling status on mount
+  // Save state to cache on every change
   useEffect(() => {
+    stateCache.set(database, { level, slowms, autoRefresh, entries, selectedEntry, supported, status })
+  }, [database, level, slowms, autoRefresh, entries, selectedEntry, supported, status])
+
+  // Fetch profiling status on mount (only if not cached)
+  useEffect(() => {
+    if (cached?.status !== undefined && cached.status !== null) return
     trpc.profiler.getStatus.query({ database })
       .then((s) => {
         setStatus(s)
         setLevel(s.was as ProfilingLevel)
         setSlowms(s.slowms)
+        setSupported(true)
         setError(null)
       })
       .catch((err) => {
         const msg = (err as Error).message ?? String(err)
+        setSupported(false)
         if (msg.includes('not supported'))
           setError('Profiling is not supported on this database engine (e.g., CosmosDB). The profiler requires native MongoDB.')
         else if (msg.includes('not authorized') || msg.includes('not allowed'))
@@ -72,6 +94,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
   }, [database])
 
   const fetchData = useCallback(async () => {
+    if (!supported) return
     setLoading(true)
     try {
       const data = await trpc.profiler.getData.query({ database, limit: 100 })
@@ -85,12 +108,12 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     } finally {
       setLoading(false)
     }
-  }, [database])
+  }, [database, supported])
 
-  // Initial data fetch
+  // Initial data fetch (only if no cached entries)
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    if (!cached?.entries?.length) fetchData()
+  }, [])
 
   // Auto-refresh
   useEffect(() => {
@@ -99,23 +122,50 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       intervalRef.current = null
     }
     const ms = REFRESH_INTERVALS[autoRefresh]
-    if (ms !== null) {
+    if (ms !== null && supported) {
       intervalRef.current = setInterval(fetchData, ms)
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [autoRefresh, fetchData])
+  }, [autoRefresh, fetchData, supported])
 
   const handleApply = async () => {
+    if (!supported) return
     setApplyLoading(true)
     try {
       await trpc.profiler.setLevel.mutate({ database, level, slowms: level === 1 ? slowms : undefined })
       const s = await trpc.profiler.getStatus.query({ database })
       setStatus(s)
+      setError(null)
+      // Start auto-refresh when enabling profiling
+      if (level > 0 && autoRefresh === 'off') setAutoRefresh('5s')
     } catch (err) {
       const msg = (err as Error).message ?? String(err)
-      setError(`Failed to set profiling level: ${msg}`)
+      if (msg.includes('not supported')) {
+        setSupported(false)
+        setError('Profiling is not supported on this database engine.')
+      } else {
+        setError(`Failed to set profiling level: ${msg}`)
+      }
+    } finally {
+      setApplyLoading(false)
+    }
+  }
+
+  const handleStop = async () => {
+    if (!supported) return
+    setApplyLoading(true)
+    try {
+      await trpc.profiler.setLevel.mutate({ database, level: 0 })
+      const s = await trpc.profiler.getStatus.query({ database })
+      setStatus(s)
+      setLevel(0)
+      setAutoRefresh('off')
+      setError(null)
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err)
+      setError(`Failed to stop profiling: ${msg}`)
     } finally {
       setApplyLoading(false)
     }
@@ -141,48 +191,30 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
 
   const handleOpenCollection = () => {
     if (!selectedEntry) return
-    // ns format: "database.collection"
     const parts = selectedEntry.ns.split('.')
     if (parts.length >= 2) {
       const connId = tabs.find((t) => t.database === database)?.connectionId
       const collectionName = parts.slice(1).join('.')
-      if (connId) {
-        openTab(connId, database, collectionName)
-      }
+      if (connId) openTab(connId, database, collectionName)
     }
   }
 
-  // Determine the active slowms threshold for coloring
   const activeSlowms = status?.slowms ?? slowms
+  const isActive = (status?.was ?? 0) > 0
 
   const columnDefs = useMemo<ColDef<ProfilerEntry>[]>(() => [
     {
-      headerName: 'Timestamp',
-      field: 'ts',
-      width: 180,
+      headerName: 'Timestamp', field: 'ts', width: 180,
       valueFormatter: (p) => {
         if (!p.value) return ''
-        try {
-          return new Date(p.value as string).toLocaleTimeString()
-        } catch { return p.value as string }
+        try { return new Date(p.value as string).toLocaleTimeString() }
+        catch { return p.value as string }
       }
     },
+    { headerName: 'Op', field: 'op', width: 80 },
+    { headerName: 'Namespace', field: 'ns', flex: 1, minWidth: 150 },
     {
-      headerName: 'Op',
-      field: 'op',
-      width: 80
-    },
-    {
-      headerName: 'Namespace',
-      field: 'ns',
-      flex: 1,
-      minWidth: 150
-    },
-    {
-      headerName: 'Duration (ms)',
-      field: 'millis',
-      width: 120,
-      sort: 'desc',
+      headerName: 'Duration (ms)', field: 'millis', width: 120, sort: 'desc',
       cellStyle: (params) => {
         const ms = params.value as number
         if (ms > activeSlowms) return { color: '#f87171' }
@@ -191,31 +223,16 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       }
     },
     {
-      headerName: 'Plan Summary',
-      field: 'planSummary',
-      flex: 1,
-      minWidth: 120,
+      headerName: 'Plan Summary', field: 'planSummary', flex: 1, minWidth: 120,
       cellStyle: (params) => {
         const plan = String(params.value ?? '')
         if (plan.includes('COLLSCAN')) return { color: '#f87171' }
         return { color: '#34d399' }
       }
     },
-    {
-      headerName: 'Docs Examined',
-      field: 'docsExamined',
-      width: 130
-    },
-    {
-      headerName: 'Keys Examined',
-      field: 'keysExamined',
-      width: 130
-    },
-    {
-      headerName: 'Returned',
-      field: 'nreturned',
-      width: 100
-    }
+    { headerName: 'Docs Examined', field: 'docsExamined', width: 130 },
+    { headerName: 'Keys Examined', field: 'keysExamined', width: 130 },
+    { headerName: 'Returned', field: 'nreturned', width: 100 }
   ], [activeSlowms])
 
   const gridTheme = useMemo(() => {
@@ -230,10 +247,6 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     })
   }, [effectiveTheme])
 
-  const onGridReady = (_params: GridReadyEvent) => {
-    // Grid is ready
-  }
-
   const onRowClicked = (event: RowClickedEvent<ProfilerEntry>) => {
     setSelectedEntry(event.data ?? null)
   }
@@ -246,9 +259,10 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
         <span className="text-xs font-medium text-muted-foreground shrink-0">Profiling:</span>
 
         <select
-          className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
           value={level}
           onChange={(e) => setLevel(Number(e.target.value) as ProfilingLevel)}
+          disabled={!supported}
         >
           <option value={0}>{LEVEL_LABELS[0]}</option>
           <option value={1}>{LEVEL_LABELS[1]}</option>
@@ -272,11 +286,22 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
         <button
           className="flex h-7 items-center gap-1.5 rounded border border-input bg-background px-2 text-xs hover:bg-accent disabled:opacity-50"
           onClick={handleApply}
-          disabled={applyLoading}
+          disabled={applyLoading || !supported}
         >
           <Play className="h-3 w-3" />
           Apply
         </button>
+
+        {isActive && supported && (
+          <button
+            className="flex h-7 items-center gap-1.5 rounded border border-destructive/50 bg-background px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            onClick={handleStop}
+            disabled={applyLoading}
+          >
+            <Square className="h-3 w-3" />
+            Stop
+          </button>
+        )}
 
         {status && (
           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
@@ -307,7 +332,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
           <button
             className="flex h-7 items-center gap-1.5 rounded border border-input bg-background px-2 text-xs hover:bg-accent disabled:opacity-50"
             onClick={fetchData}
-            disabled={loading}
+            disabled={loading || !supported}
           >
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -316,7 +341,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
           <button
             className="flex h-7 items-center gap-1.5 rounded border border-input bg-background px-2 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
             onClick={handleClear}
-            disabled={clearLoading}
+            disabled={clearLoading || !supported}
           >
             <Trash2 className="h-3 w-3" />
             Clear
@@ -338,13 +363,12 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
         </div>
       )}
 
-      {/* Grid area — top ~60% or full if no selection */}
+      {/* Grid area */}
       <div className={`min-h-0 ${selectedEntry ? 'flex-[3]' : 'flex-1'}`}>
         <AgGridReact<ProfilerEntry>
           theme={gridTheme}
           rowData={entries}
           columnDefs={columnDefs}
-          onGridReady={onGridReady}
           onRowClicked={onRowClicked}
           rowSelection="single"
           defaultColDef={{ resizable: true, sortable: true }}
@@ -355,27 +379,20 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       {/* Detail panel */}
       {selectedEntry && (
         <div className="flex-[2] min-h-0 border-t border-border flex flex-col bg-card">
-          {/* Detail header */}
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-            <span className="text-xs font-semibold text-foreground">
-              {selectedEntry.op}
-            </span>
+            <span className="text-xs font-semibold text-foreground">{selectedEntry.op}</span>
             <span className="text-xs text-muted-foreground">{selectedEntry.ns}</span>
             <span className={`text-xs font-medium ${
-              selectedEntry.millis > activeSlowms
-                ? 'text-red-400'
-                : selectedEntry.millis > 50
-                ? 'text-amber-400'
+              selectedEntry.millis > activeSlowms ? 'text-red-400'
+                : selectedEntry.millis > 50 ? 'text-amber-400'
                 : 'text-emerald-400'
             }`}>
               {selectedEntry.millis}ms
             </span>
-
             <div className="ml-auto flex items-center gap-1.5">
               <button
                 className="flex h-6 items-center gap-1 rounded border border-input bg-background px-2 text-xs hover:bg-accent"
                 onClick={handleOpenCollection}
-                title="Open this collection in a new tab"
               >
                 <ExternalLink className="h-3 w-3" />
                 Open Collection
@@ -383,15 +400,12 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
               <button
                 className="flex h-6 items-center gap-1 rounded border border-input bg-background px-2 text-xs hover:bg-accent"
                 onClick={handleCopyQuery}
-                title="Copy command JSON to clipboard"
               >
                 <Copy className="h-3 w-3" />
                 Copy Query
               </button>
             </div>
           </div>
-
-          {/* Raw doc */}
           <div className="flex-1 overflow-auto p-3">
             <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-all">
               {JSON.stringify(selectedEntry.rawDoc, null, 2)}
