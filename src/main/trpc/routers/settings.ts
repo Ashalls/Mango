@@ -31,5 +31,23 @@ export const settingsRouter = router({
       })
       if (canceled || filePaths.length === 0) return { canceled: true, path: null }
       return { canceled: false, path: filePaths[0] }
+    }),
+
+  pickFile: procedure
+    .input(z.object({
+      title: z.string().optional(),
+      filters: z.array(z.object({ name: z.string(), extensions: z.array(z.string()) })).optional()
+    }))
+    .mutation(async ({ input }) => {
+      const { dialog, BrowserWindow } = await import('electron')
+      const win = BrowserWindow.getFocusedWindow()
+      if (!win) return { canceled: true, path: null }
+      const { filePaths, canceled } = await dialog.showOpenDialog(win, {
+        title: input.title || 'Select File',
+        filters: input.filters,
+        properties: ['openFile']
+      })
+      if (canceled || filePaths.length === 0) return { canceled: true, path: null }
+      return { canceled: false, path: filePaths[0] }
     })
 })
