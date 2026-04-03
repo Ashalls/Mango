@@ -309,6 +309,25 @@ export function registerTools(server: McpServer): void {
     return { content: [{ type: 'text', text: JSON.stringify(plan, null, 2) }] }
   })
 
+  server.registerTool('mongo_aggregate_preview', {
+    description: 'Preview the output of an aggregation pipeline up to a specific stage index. Useful for debugging pipelines stage by stage.',
+    inputSchema: {
+      database: z.string().describe('Database name'),
+      collection: z.string().describe('Collection name'),
+      pipeline: z.array(z.record(z.unknown())).describe('Full aggregation pipeline array'),
+      stageIndex: z.number().describe('Zero-based index of the stage to preview up to'),
+      sampleSize: z.number().default(10).describe('Max documents to return in preview')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ database, collection, pipeline, stageIndex, sampleSize }) => {
+    const result = await queryActions.aggregateWithStagePreview(
+      database, collection, pipeline, stageIndex, sampleSize
+    )
+    return {
+      content: [{ type: 'text', text: `Stage ${stageIndex} output (${result.count} total docs):\n${JSON.stringify(result.documents, null, 2)}` }]
+    }
+  })
+
   // --- Mutation tools (with write access checks) ---
   // Helper to get connection info for logging
   function getActiveConnectionInfo() {
