@@ -70,6 +70,29 @@ export async function aggregate(
   return serializeDocuments(results.slice(0, MAX_RESULT_SIZE) as Record<string, unknown>[])
 }
 
+export async function aggregateWithStagePreview(
+  database: string,
+  collection: string,
+  pipeline: Record<string, unknown>[],
+  stageIndex: number,
+  sampleSize: number = 20
+): Promise<{ documents: Record<string, unknown>[]; count: number }> {
+  const db = mongoService.getDb(database)
+  const stagesUpTo = pipeline.slice(0, stageIndex + 1)
+  const countPipeline = [...stagesUpTo, { $count: 'total' }]
+  const previewPipeline = [...stagesUpTo, { $limit: sampleSize }]
+
+  const [previewResults, countResults] = await Promise.all([
+    db.collection(collection).aggregate(previewPipeline).toArray(),
+    db.collection(collection).aggregate(countPipeline).toArray()
+  ])
+
+  return {
+    documents: serializeDocuments(previewResults as Record<string, unknown>[]),
+    count: countResults[0]?.total ?? 0
+  }
+}
+
 export async function distinct(
   database: string,
   collection: string,
@@ -83,12 +106,20 @@ export async function distinct(
 export async function explain(
   database: string,
   collection: string,
-  filter: Record<string, unknown>
+  filter: Record<string, unknown>,
+  pipeline?: Record<string, unknown>[]
 ): Promise<Record<string, unknown>> {
   const db = mongoService.getDb(database)
+  if (pipeline && pipeline.length > 0) {
+    const result = await db
+      .collection(collection)
+      .aggregate(pipeline)
+      .explain('allPlansExecution')
+    return result as unknown as Record<string, unknown>
+  }
   const result = await db
     .collection(collection)
     .find(convertObjectIds(filter))
-    .explain('executionStats')
+    .explain('allPlansExecution')
   return result as unknown as Record<string, unknown>
 }
