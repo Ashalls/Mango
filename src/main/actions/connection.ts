@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import * as mongoService from '../services/mongodb'
 import * as configService from '../services/config'
-import type { ConnectionProfile, ConnectionState } from '@shared/types'
+import type { ConnectionProfile, ConnectionState, SSHConfig, TLSConfig } from '@shared/types'
 
 export function listConnections(): ConnectionProfile[] {
   return configService.loadConnections()
@@ -17,6 +17,9 @@ export function saveConnection(input: {
   claudeAccess?: 'readonly' | 'readwrite'
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
   databaseCodebasePaths?: Record<string, string>
+  sshConfig?: SSHConfig
+  tlsConfig?: TLSConfig
+  folderId?: string
 }): ConnectionProfile {
   const connections = configService.loadConnections()
   const profile: ConnectionProfile = {
@@ -28,7 +31,10 @@ export function saveConnection(input: {
     isReadOnly: input.isReadOnly,
     claudeAccess: input.claudeAccess ?? (input.isProduction ? 'readonly' : 'readwrite'),
     claudeDbOverrides: input.claudeDbOverrides,
-    databaseCodebasePaths: input.databaseCodebasePaths
+    databaseCodebasePaths: input.databaseCodebasePaths,
+    sshConfig: input.sshConfig,
+    tlsConfig: input.tlsConfig,
+    folderId: input.folderId
   }
 
   const index = connections.findIndex((c) => c.id === profile.id)
