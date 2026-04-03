@@ -8,6 +8,7 @@ import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
 import { AggregationEditor } from '@renderer/components/aggregation/AggregationEditor'
 import { VisualExplain } from '@renderer/components/explain/VisualExplain'
+import { QueryProfiler } from '@renderer/components/profiler/QueryProfiler'
 import { trpc } from '@renderer/lib/trpc'
 import { MessageSquare } from 'lucide-react'
 import type { ExplainPlan } from '@shared/types'
@@ -43,7 +44,9 @@ export function MainPanel() {
       <TabBar />
       {activeTab ? (
         <>
-          {activeTab.scope !== 'collection' ? (
+          {activeTab.collection === '__profiler__' ? (
+            <QueryProfiler key={activeTab.id} database={activeTab.database} />
+          ) : activeTab.scope !== 'collection' ? (
             <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-3">
               <MessageSquare className="h-10 w-10 opacity-30" />
               <p className="text-sm">Chat with Claude in the side panel &rarr;</p>

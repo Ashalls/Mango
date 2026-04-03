@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import { serializeDocuments } from '../services/serialize'
+import * as queryLog from '../services/queryLog'
 import { MAX_RESULT_SIZE } from '@shared/constants'
 import type { QueryOptions, QueryResult } from '@shared/types'
 
@@ -24,31 +25,36 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
 }
 
 export async function find(options: QueryOptions): Promise<QueryResult> {
-  const db = mongoService.getDb(options.database)
-  const col = db.collection(options.collection)
+  return queryLog.timed(options.database, options.collection, 'find', {
+    filter: options.filter, projection: options.projection, sort: options.sort,
+    skip: options.skip, limit: options.limit
+  }, async () => {
+    const db = mongoService.getDb(options.database)
+    const col = db.collection(options.collection)
 
-  const limit = Math.min(options.limit ?? 50, MAX_RESULT_SIZE)
-  const skip = options.skip ?? 0
-  const processedFilter = convertObjectIds(options.filter ?? {})
+    const limit = Math.min(options.limit ?? 50, MAX_RESULT_SIZE)
+    const skip = options.skip ?? 0
+    const processedFilter = convertObjectIds(options.filter ?? {})
 
-  let cursor = col.find(processedFilter)
+    let cursor = col.find(processedFilter)
 
-  if (options.projection) {
-    cursor = cursor.project(options.projection)
-  }
-  if (options.sort) {
-    cursor = cursor.sort(options.sort)
-  }
+    if (options.projection) {
+      cursor = cursor.project(options.projection)
+    }
+    if (options.sort) {
+      cursor = cursor.sort(options.sort)
+    }
 
-  cursor = cursor.skip(skip).limit(limit)
+    cursor = cursor.skip(skip).limit(limit)
 
-  const rawDocs = await cursor.toArray()
-  const totalCount = await col.countDocuments(processedFilter)
+    const rawDocs = await cursor.toArray()
+    const totalCount = await col.countDocuments(processedFilter)
 
-  return {
-    documents: serializeDocuments(rawDocs as Record<string, unknown>[]),
-    totalCount
-  }
+    return {
+      documents: serializeDocuments(rawDocs as Record<string, unknown>[]),
+      totalCount
+    }
+  })
 }
 
 export async function count(
@@ -65,9 +71,11 @@ export async function aggregate(
   collection: string,
   pipeline: Record<string, unknown>[]
 ): Promise<Record<string, unknown>[]> {
-  const db = mongoService.getDb(database)
-  const results = await db.collection(collection).aggregate(pipeline).toArray()
-  return serializeDocuments(results.slice(0, MAX_RESULT_SIZE) as Record<string, unknown>[])
+  return queryLog.timed(database, collection, 'aggregate', { pipeline }, async () => {
+    const db = mongoService.getDb(database)
+    const results = await db.collection(collection).aggregate(pipeline).toArray()
+    return serializeDocuments(results.slice(0, MAX_RESULT_SIZE) as Record<string, unknown>[])
+  })
 }
 
 export async function aggregateWithStagePreview(

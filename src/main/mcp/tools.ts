@@ -9,6 +9,7 @@ import * as configService from '../services/config'
 import * as mongoService from '../services/mongodb'
 import * as changelog from '../services/changelog'
 import * as adminActions from '../actions/admin'
+import * as profilerActions from '../actions/profiler'
 
 let _mainWindow: BrowserWindow | null = null
 
@@ -348,6 +349,24 @@ export function registerTools(server: McpServer): void {
     const summary = results.map((r) => `${r.database}.${r.collection} | _id:${r.documentId} | ${r.fieldPath}: ${r.matchedValue}`).join('\n')
     return {
       content: [{ type: 'text', text: `Found ${results.length} matches:\n${summary}` }]
+    }
+  })
+
+  server.registerTool('mongo_query_profiler', {
+    description: 'Read slow query profiling data from a MongoDB database. Returns recent profiled operations sorted by duration.',
+    inputSchema: {
+      database: z.string().describe('Database name'),
+      limit: z.number().default(20).describe('Max results'),
+      namespace: z.string().optional().describe('Filter by namespace (e.g., "mydb.users")')
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  }, async ({ database, limit, namespace }) => {
+    const data = await profilerActions.getProfilingData(database, limit, namespace)
+    const summary = data.map((d: Record<string, unknown>) =>
+      `${d.op} ${d.ns} — ${d.millis}ms | ${d.planSummary} | docs:${d.docsExamined} keys:${d.keysExamined}`
+    ).join('\n')
+    return {
+      content: [{ type: 'text', text: `Profiling data (${data.length} entries):\n${summary}` }]
     }
   })
 

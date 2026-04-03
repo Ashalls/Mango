@@ -14,6 +14,7 @@ import { SortBuilder } from './SortBuilder'
 import { ProjectionBuilder } from './ProjectionBuilder'
 import { QueryFooter } from './QueryFooter'
 import { QueryHistoryPanel } from './QueryHistoryPanel'
+import { CodeGenModal } from '@renderer/components/codegen/CodeGenModal'
 
 // --- Types ---
 
@@ -184,6 +185,7 @@ export function QueryBuilder() {
   const [sortExpanded, setSortExpanded] = useState(false)
   const [projExpanded, setProjExpanded] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [codegenOpen, setCodegenOpen] = useState(false)
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { setFilter, setPage, executeQuery } = useTabStore()
   const loading = tab?.loading ?? false
@@ -609,9 +611,32 @@ export function QueryBuilder() {
 
       {/* FOOTER — always visible */}
       <div className="relative">
+        <div className="flex items-center border-t border-border px-4 py-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setCodegenOpen(true)}
+            title="Generate code for this query"
+          >
+            <Code className="mr-1 h-3.5 w-3.5" />
+            Code
+          </Button>
+        </div>
         <QueryFooter onRun={handleRun} onToggleHistory={() => setHistoryOpen(!historyOpen)} loading={loading} />
         {historyOpen && <QueryHistoryPanel onClose={() => setHistoryOpen(false)} />}
       </div>
+
+      <CodeGenModal
+        open={codegenOpen}
+        onClose={() => setCodegenOpen(false)}
+        type="find"
+        filter={rawMode ? (() => { try { return JSON.parse(rawJson) } catch { return {} } })() : buildFilter(rows, matchMode)}
+        projection={tab?.projection ?? undefined}
+        sort={tab?.sort ?? undefined}
+        skip={(tab?.page ?? 0) * (tab?.pageSize ?? 50)}
+        limit={tab?.pageSize ?? 50}
+      />
     </div>
   )
 }
