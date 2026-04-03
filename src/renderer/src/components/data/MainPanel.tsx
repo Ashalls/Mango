@@ -3,14 +3,13 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { TabBar } from '@renderer/components/layout/TabBar'
 import { QueryBuilder } from '@renderer/components/query/QueryBuilder'
 import { DocumentTable } from './DocumentTable'
-import { TreeView } from './TreeView'
 import { BulkToolbar } from './BulkToolbar'
 import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
 import { AggregationEditor } from '@renderer/components/aggregation/AggregationEditor'
 import { VisualExplain } from '@renderer/components/explain/VisualExplain'
 import { trpc } from '@renderer/lib/trpc'
-import { MessageSquare, Table2, GitBranch, Braces } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import type { ExplainPlan } from '@shared/types'
 
 export function MainPanel() {
@@ -106,29 +105,6 @@ export function MainPanel() {
                   )}
                 </button>
 
-                {/* View mode toggle — only for documents sub-tab */}
-                {subTab === 'documents' && (
-                  <div className="ml-auto flex items-center gap-0.5 rounded border border-border mr-1">
-                    {([
-                      { key: 'table' as const, icon: Table2, label: 'Table' },
-                      { key: 'tree' as const, icon: GitBranch, label: 'Tree' },
-                      { key: 'json' as const, icon: Braces, label: 'JSON' }
-                    ]).map(({ key, icon: Icon, label }) => (
-                      <button
-                        key={key}
-                        className={`flex items-center gap-1 px-2 py-0.5 text-[11px] ${
-                          viewMode === key
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                        onClick={() => setViewMode(key)}
-                      >
-                        <Icon className="h-3 w-3" />
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {subTab === 'documents' ? (
@@ -136,11 +112,7 @@ export function MainPanel() {
                   <QueryBuilder />
                   <BulkToolbar />
                   <div className={viewMode === 'table' && activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
-                    {viewMode === 'table' || viewMode === 'json' ? (
-                      <DocumentTable viewMode={viewMode === 'json' ? 'json' : 'table'} />
-                    ) : (
-                      <TreeView />
-                    )}
+                    <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
                   </div>
                   {viewMode === 'table' && activeTab.selectedDocument && (
                     <div className="h-1/2 min-h-0">

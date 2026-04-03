@@ -11,6 +11,7 @@ import {
   Loader2,
   Table2,
   Braces,
+  GitBranch,
   Trash2,
   Copy,
   Hash,
@@ -21,6 +22,7 @@ import {
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
+import { TreeView } from './TreeView'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { useConnectionStore } from '@renderer/store/connectionStore'
@@ -80,7 +82,7 @@ const gridLightTheme = themeAlpine.withParams({
   columnBorder: true
 })
 
-export type ViewMode = 'table' | 'json'
+export type ViewMode = 'table' | 'tree' | 'json'
 
 const TYPE_COLORS: Record<string, string> = {
   String: '#3b82f6',
@@ -148,7 +150,7 @@ function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
   )
 }
 
-export function DocumentTable({ viewMode: viewModeProp }: { viewMode?: ViewMode } = {}) {
+export function DocumentTable({ viewMode: viewModeProp, onViewModeChange }: { viewMode?: ViewMode; onViewModeChange?: (mode: ViewMode) => void } = {}) {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
@@ -356,6 +358,29 @@ export function DocumentTable({ viewMode: viewModeProp }: { viewMode?: ViewMode 
             {totalCount.toLocaleString()} documents
           </span>
           <div className="ml-2 h-4 w-px bg-border" />
+          <div className="flex rounded-md border border-border">
+            <button
+              className={`flex items-center gap-1 px-2 py-1 text-xs ${viewMode === 'table' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => onViewModeChange?.('table')}
+            >
+              <Table2 className="h-3.5 w-3.5" />
+              Table
+            </button>
+            <button
+              className={`flex items-center gap-1 border-l border-border px-2 py-1 text-xs ${viewMode === 'tree' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => onViewModeChange?.('tree')}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Tree
+            </button>
+            <button
+              className={`flex items-center gap-1 border-l border-border px-2 py-1 text-xs ${viewMode === 'json' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => onViewModeChange?.('json')}
+            >
+              <Braces className="h-3.5 w-3.5" />
+              JSON
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -424,7 +449,9 @@ export function DocumentTable({ viewMode: viewModeProp }: { viewMode?: ViewMode 
       </div>
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {viewMode === 'table' ? (
+        {viewMode === 'tree' ? (
+          <TreeView />
+        ) : viewMode === 'table' ? (
           <ContextMenu.Root>
             <ContextMenu.Trigger className="h-full w-full" asChild>
               <div className="h-full">
