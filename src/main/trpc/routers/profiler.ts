@@ -1,6 +1,7 @@
 import { router, procedure } from '../context'
 import { z } from 'zod'
 import * as profilerActions from '../../actions/profiler'
+import * as queryLog from '../../services/queryLog'
 
 export const profilerRouter = router({
   getStatus: procedure
@@ -29,6 +30,16 @@ export const profilerRouter = router({
       limit: z.number().optional().default(100)
     }))
     .query(({ input }) => profilerActions.getCurrentOps(input.database, input.limit)),
+
+  getAppLog: procedure
+    .input(z.object({
+      limit: z.number().optional().default(100),
+      namespace: z.string().optional()
+    }))
+    .query(({ input }) => queryLog.getEntries(input.limit, input.namespace)),
+
+  clearAppLog: procedure
+    .mutation(() => { queryLog.clear() }),
 
   clear: procedure
     .input(z.object({ database: z.string() }))

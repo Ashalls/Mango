@@ -96,7 +96,8 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     setLoading(true)
     try {
       if (mode === 'currentOp') {
-        const data = await trpc.profiler.getCurrentOps.query({ database, limit: 100 })
+        // Use app-level query log — records all queries with timing
+        const data = await trpc.profiler.getAppLog.query({ limit: 100, namespace: `${database}.` })
         setEntries(data as ProfilerEntry[])
       } else if (mode === 'native') {
         const data = await trpc.profiler.getData.query({ database, limit: 100 })
@@ -171,6 +172,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
 
   const handleClear = async () => {
     if (mode === 'currentOp') {
+      await trpc.profiler.clearAppLog.mutate().catch(() => {})
       setEntries([])
       setSelectedEntry(null)
       return
@@ -263,9 +265,9 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
 
         {mode === 'currentOp' ? (
           <>
-            <span className="text-xs font-medium text-muted-foreground">Live Operations</span>
+            <span className="text-xs font-medium text-muted-foreground">Query Log</span>
             <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-blue-500/20 text-blue-400">
-              currentOp mode
+              app-level timing
             </span>
           </>
         ) : (
