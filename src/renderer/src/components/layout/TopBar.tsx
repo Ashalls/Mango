@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Database, MessageSquare, Plug, PlugZap, Sun, Moon, Monitor, Settings } from 'lucide-react'
+import { Database, MessageSquare, Plug, PlugZap, Sun, Moon, Monitor, Settings, Search } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@renderer/components/ui/popover'
 import { Switch } from '@renderer/components/ui/switch'
@@ -8,6 +8,7 @@ import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useClaudeStore } from '@renderer/store/claudeStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
+import { ValueSearchDialog } from '@renderer/components/search/ValueSearchDialog'
 
 export function TopBar() {
   const activeConnection = useConnectionStore((s) => s.activeConnection)
@@ -18,6 +19,7 @@ export function TopBar() {
   const isPanelOpen = useClaudeStore((s) => s.isPanelOpen)
   const { theme, setTheme, catSounds, setCatSounds } = useSettingsStore()
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [valueSearchOpen, setValueSearchOpen] = useState(false)
 
   useEffect(() => {
     const handler = (_event: unknown, data: { version: string }) => {
@@ -27,6 +29,17 @@ export function TopBar() {
     return () => {
       window.electron?.ipcRenderer.removeListener('update:downloaded', handler)
     }
+  }, [])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault()
+        setValueSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
   }, [])
 
   const activeProfile = profiles.find((p) => p.id === activeConnection?.profileId)
@@ -83,6 +96,14 @@ export function TopBar() {
             </button>
           </div>
         )}
+        <button
+          onClick={() => setValueSearchOpen(true)}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Search Values (Ctrl+Shift+F)"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>Search Values</span>
+        </button>
         <Popover>
           <PopoverTrigger asChild>
             <Button
@@ -147,6 +168,7 @@ export function TopBar() {
           Claude
         </Button>
       </div>
+      <ValueSearchDialog open={valueSearchOpen} onClose={() => setValueSearchOpen(false)} />
     </div>
   )
 }
