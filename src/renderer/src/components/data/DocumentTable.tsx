@@ -80,7 +80,7 @@ const gridLightTheme = themeAlpine.withParams({
   columnBorder: true
 })
 
-type ViewMode = 'table' | 'json'
+export type ViewMode = 'table' | 'json'
 
 const TYPE_COLORS: Record<string, string> = {
   String: '#3b82f6',
@@ -148,7 +148,7 @@ function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
   )
 }
 
-export function DocumentTable() {
+export function DocumentTable({ viewMode: viewModeProp }: { viewMode?: ViewMode } = {}) {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
@@ -157,7 +157,7 @@ export function DocumentTable() {
     return activeId ? s.profiles.find((p) => p.id === activeId) : undefined
   })
   const isReadOnly = activeProfile?.isReadOnly ?? false
-  const [viewMode, setViewMode] = useState<ViewMode>('table')
+  const viewMode: ViewMode = viewModeProp ?? 'table'
   const [contextDoc, setContextDoc] = useState<Record<string, unknown> | null>(null)
   const [contextCell, setContextCell] = useState<{ field: string; value: unknown } | null>(null)
   const [editingPage, setEditingPage] = useState(false)
@@ -356,22 +356,6 @@ export function DocumentTable() {
             {totalCount.toLocaleString()} documents
           </span>
           <div className="ml-2 h-4 w-px bg-border" />
-          <div className="flex rounded-md border border-border">
-            <button
-              className={`flex items-center gap-1 px-2 py-1 text-xs ${viewMode === 'table' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setViewMode('table')}
-            >
-              <Table2 className="h-3.5 w-3.5" />
-              Table
-            </button>
-            <button
-              className={`flex items-center gap-1 border-l border-border px-2 py-1 text-xs ${viewMode === 'json' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setViewMode('json')}
-            >
-              <Braces className="h-3.5 w-3.5" />
-              JSON
-            </button>
-          </div>
         </div>
         <div className="flex items-center gap-2">
           <select
