@@ -119,6 +119,9 @@ export const useTabStore = create<TabStore>((set, get) => ({
       return
     }
     const tab = createTab(connectionId, database, collection, isView)
+    if (collection === '__profiler__') {
+      tab.label = `${database} (Profiler)`
+    }
     set((state) => ({
       tabs: [...state.tabs, tab],
       activeTabId: tab.id
@@ -284,6 +287,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
     const tab = get().getActiveTab()
     if (!tab) return
     if (tab.scope !== 'collection') return
+    if (tab.collection === '__profiler__') return
 
     get().updateTab(tab.id, { loading: true, error: null })
     try {
