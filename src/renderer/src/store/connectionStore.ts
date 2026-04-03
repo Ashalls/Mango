@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ConnectionProfile, ConnectionState } from '@shared/types'
+import type { ConnectionProfile, ConnectionState, ConnectionFolder } from '@shared/types'
 import { trpc } from '@renderer/lib/trpc'
 
 interface ConnectionStore {
@@ -7,6 +7,7 @@ interface ConnectionStore {
   activeConnection: ConnectionState | null
   connectedIds: string[] // All currently connected profile IDs
   loading: boolean
+  folders: ConnectionFolder[]
 
   loadProfiles: () => Promise<void>
   saveProfile: (profile: Omit<ConnectionProfile, 'id'> & { id?: string }) => Promise<void>
@@ -15,6 +16,9 @@ interface ConnectionStore {
   disconnect: (id?: string) => Promise<void>
   setActive: (id: string) => Promise<void>
   refreshStatus: () => Promise<void>
+  loadFolders: () => Promise<void>
+  saveFolder: (name: string, order: number, id?: string) => Promise<void>
+  deleteFolder: (id: string) => Promise<void>
 }
 
 export const useConnectionStore = create<ConnectionStore>((set, get) => ({
@@ -22,10 +26,12 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   activeConnection: null,
   connectedIds: [],
   loading: false,
+  folders: [],
 
   loadProfiles: async () => {
     const profiles = await trpc.connection.list.query()
     set({ profiles })
+    await get().loadFolders()
   },
 
   saveProfile: async (profile) => {
@@ -82,5 +88,21 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       activeConnection: status.status === 'connected' ? status : null,
       connectedIds: status.connectedIds
     })
+  },
+
+  loadFolders: async () => {
+    const folders = await trpc.connection.listFolders.query()
+    set({ folders })
+  },
+
+  saveFolder: async (name, order, id) => {
+    const folders = await trpc.connection.saveFolder.mutate({ id, name, order })
+    set({ folders })
+  },
+
+  deleteFolder: async (id) => {
+    const folders = await trpc.connection.deleteFolder.mutate({ id })
+    set({ folders })
+    await get().loadProfiles()
   }
 }))
