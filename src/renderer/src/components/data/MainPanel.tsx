@@ -3,18 +3,20 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { TabBar } from '@renderer/components/layout/TabBar'
 import { QueryBuilder } from '@renderer/components/query/QueryBuilder'
 import { DocumentTable } from './DocumentTable'
+import { TreeView } from './TreeView'
 import { BulkToolbar } from './BulkToolbar'
 import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
 import { AggregationEditor } from '@renderer/components/aggregation/AggregationEditor'
 import { VisualExplain } from '@renderer/components/explain/VisualExplain'
 import { trpc } from '@renderer/lib/trpc'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, Table2, GitBranch } from 'lucide-react'
 import type { ExplainPlan } from '@shared/types'
 
 export function MainPanel() {
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const [subTab, setSubTab] = useState<'documents' | 'aggregation' | 'explain' | 'indexes'>('documents')
+  const [viewMode, setViewMode] = useState<'table' | 'tree'>('table')
   const [explainPlan, setExplainPlan] = useState<ExplainPlan | null>(null)
 
   const runExplain = async () => {
@@ -109,10 +111,36 @@ export function MainPanel() {
                 <>
                   <QueryBuilder />
                   <BulkToolbar />
-                  <div className={activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
-                    <DocumentTable />
+                  {/* View mode toggle */}
+                  <div className="flex items-center gap-1.5 border-b border-border px-4 py-1">
+                    <span className="text-[11px] text-muted-foreground mr-1">View:</span>
+                    <button
+                      className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        viewMode === 'table'
+                          ? 'bg-emerald-500/15 text-emerald-400'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      onClick={() => setViewMode('table')}
+                    >
+                      <Table2 className="h-3 w-3" />
+                      Table
+                    </button>
+                    <button
+                      className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        viewMode === 'tree'
+                          ? 'bg-emerald-500/15 text-emerald-400'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      onClick={() => setViewMode('tree')}
+                    >
+                      <GitBranch className="h-3 w-3" />
+                      Tree
+                    </button>
                   </div>
-                  {activeTab.selectedDocument && (
+                  <div className={viewMode === 'table' && activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
+                    {viewMode === 'table' ? <DocumentTable /> : <TreeView />}
+                  </div>
+                  {viewMode === 'table' && activeTab.selectedDocument && (
                     <div className="h-1/2 min-h-0">
                       <DocumentEditor />
                     </div>
