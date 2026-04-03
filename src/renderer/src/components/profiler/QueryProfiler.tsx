@@ -47,6 +47,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
   const [loading, setLoading] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<ProfilerEntry | null>(null)
   const [clearLoading, setClearLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -57,8 +58,15 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
         setStatus(s)
         setLevel(s.was as ProfilingLevel)
         setSlowms(s.slowms)
+        setError(null)
       })
-      .catch(() => {})
+      .catch((err) => {
+        const msg = (err as Error).message ?? String(err)
+        if (msg.includes('not authorized') || msg.includes('not allowed'))
+          setError('Profiling not available — insufficient permissions on this database. You may need the dbAdmin or clusterMonitor role.')
+        else
+          setError(`Failed to read profiling status: ${msg}`)
+      })
   }, [database])
 
   const fetchData = useCallback(async () => {
@@ -67,7 +75,11 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       const data = await trpc.profiler.getData.query({ database, limit: 100 })
       setEntries(data as ProfilerEntry[])
     } catch (err) {
-      console.error('Failed to fetch profiling data:', err)
+      const msg = (err as Error).message ?? String(err)
+      if (msg.includes('not authorized') || msg.includes('not allowed'))
+        setError('Cannot read system.profile — insufficient permissions. Profiling requires dbAdmin or clusterMonitor role.')
+      else if (!msg.includes('ns not found'))
+        setError(`Failed to fetch profiling data: ${msg}`)
     } finally {
       setLoading(false)
     }
@@ -100,7 +112,8 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       const s = await trpc.profiler.getStatus.query({ database })
       setStatus(s)
     } catch (err) {
-      console.error('Failed to set profiling level:', err)
+      const msg = (err as Error).message ?? String(err)
+      setError(`Failed to set profiling level: ${msg}`)
     } finally {
       setApplyLoading(false)
     }
@@ -308,6 +321,14 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
           </button>
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-300">
+          <Activity className="h-3.5 w-3.5 shrink-0" />
+          {error}
+        </div>
+      )}
 
       {/* Grid area — top ~60% or full if no selection */}
       <div className={`min-h-0 ${selectedEntry ? 'flex-[3]' : 'flex-1'}`}>
