@@ -2,6 +2,7 @@ import { router, procedure, z } from '../context'
 import * as queryActions from '../../actions/query'
 import * as queryHistory from '../../services/queryHistory'
 import { parseExplainResult } from '../../services/explainParser'
+import { generateCode } from '../../services/queryCodegen'
 
 export const queryRouter = router({
   find: procedure
@@ -124,6 +125,25 @@ export const queryRouter = router({
         input.scope,
         { regex: input.regex, caseInsensitive: input.caseInsensitive, maxResults: input.maxResults }
       )
+    }),
+
+  generateCode: procedure
+    .input(z.object({
+      type: z.enum(['find', 'aggregate']),
+      database: z.string(),
+      collection: z.string(),
+      filter: z.record(z.unknown()).optional(),
+      projection: z.record(z.unknown()).optional(),
+      sort: z.record(z.unknown()).optional(),
+      skip: z.number().optional(),
+      limit: z.number().optional(),
+      pipeline: z.array(z.record(z.unknown())).optional(),
+      includeBoilerplate: z.boolean(),
+      language: z.enum(['javascript', 'python', 'java', 'csharp', 'php', 'ruby'])
+    }))
+    .query(({ input }) => {
+      const { language, ...codegenInput } = input
+      return { code: generateCode(codegenInput, language) }
     }),
 
   getHistory: procedure
