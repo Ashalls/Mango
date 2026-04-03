@@ -23,6 +23,13 @@ export const profilerRouter = router({
     }))
     .query(({ input }) => profilerActions.getProfilingData(input.database, input.limit, input.namespace)),
 
+  getCurrentOps: procedure
+    .input(z.object({
+      database: z.string(),
+      limit: z.number().optional().default(100)
+    }))
+    .query(({ input }) => profilerActions.getCurrentOps(input.database, input.limit)),
+
   clear: procedure
     .input(z.object({ database: z.string() }))
     .mutation(({ input }) => profilerActions.clearProfilingData(input.database))
