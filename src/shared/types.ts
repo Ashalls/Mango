@@ -12,6 +12,9 @@ export interface ConnectionProfile {
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
   /** Per-database codebase paths for Claude context (key = database name) */
   databaseCodebasePaths?: Record<string, string>
+  sshConfig?: SSHConfig
+  tlsConfig?: TLSConfig
+  folderId?: string
 }
 
 export interface ConnectionState {
@@ -169,4 +172,67 @@ export interface ValueSearchProgress {
   resultsFound: number
   currentCollection: string
   done: boolean
+}
+
+// --- SSH / TLS connection types ---
+
+export interface SSHConfig {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  authMethod: 'password' | 'privateKey'
+  password?: string
+  privateKeyPath?: string
+  passphrase?: string
+}
+
+export interface TLSConfig {
+  enabled: boolean
+  caFile?: string
+  certificateKeyFile?: string
+  certificateKeyFilePassword?: string
+  allowInvalidHostnames: boolean
+  allowInvalidCertificates: boolean
+  sniHostname?: string
+}
+
+// --- Connection Folders ---
+
+export interface ConnectionFolder {
+  id: string
+  name: string
+  order: number
+}
+
+// --- Query Profiler ---
+
+export interface ProfilerEntry {
+  ts: string
+  op: string
+  ns: string
+  millis: number
+  planSummary: string
+  docsExamined: number
+  keysExamined: number
+  nreturned: number
+  command: Record<string, unknown>
+  rawDoc: Record<string, unknown>
+}
+
+// --- Code Generation ---
+
+export type CodegenLanguage = 'javascript' | 'python' | 'java' | 'csharp' | 'php' | 'ruby'
+
+export interface CodegenInput {
+  type: 'find' | 'aggregate'
+  database: string
+  collection: string
+  filter?: Record<string, unknown>
+  projection?: Record<string, unknown>
+  sort?: Record<string, unknown>
+  skip?: number
+  limit?: number
+  pipeline?: Record<string, unknown>[]
+  includeBoilerplate: boolean
 }
