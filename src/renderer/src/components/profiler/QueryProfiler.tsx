@@ -62,8 +62,10 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       })
       .catch((err) => {
         const msg = (err as Error).message ?? String(err)
-        if (msg.includes('not authorized') || msg.includes('not allowed'))
-          setError('Profiling not available — insufficient permissions on this database. You may need the dbAdmin or clusterMonitor role.')
+        if (msg.includes('not supported'))
+          setError('Profiling is not supported on this database engine (e.g., CosmosDB). The profiler requires native MongoDB.')
+        else if (msg.includes('not authorized') || msg.includes('not allowed'))
+          setError('Profiling not available — insufficient permissions. You may need the dbAdmin or clusterMonitor role.')
         else
           setError(`Failed to read profiling status: ${msg}`)
       })
@@ -326,7 +328,13 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
       {error && (
         <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-300">
           <Activity className="h-3.5 w-3.5 shrink-0" />
-          {error}
+          <span className="flex-1">{error}</span>
+          <button
+            className="shrink-0 text-amber-400 hover:text-amber-200"
+            onClick={() => setError(null)}
+          >
+            ✕
+          </button>
         </div>
       )}
 

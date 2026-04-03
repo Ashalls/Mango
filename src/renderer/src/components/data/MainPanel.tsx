@@ -45,7 +45,7 @@ export function MainPanel() {
       {activeTab ? (
         <>
           {activeTab.collection === '__profiler__' ? (
-            <QueryProfiler database={activeTab.database} />
+            <QueryProfiler key={activeTab.id} database={activeTab.database} />
           ) : activeTab.scope !== 'collection' ? (
             <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-3">
               <MessageSquare className="h-10 w-10 opacity-30" />
