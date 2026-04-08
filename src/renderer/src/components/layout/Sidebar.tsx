@@ -67,6 +67,32 @@ export function Sidebar() {
     }
   }, [isConnected, activeConnection?.profileId])
 
+  // Refresh the tree when a migration (copy database/collection) finishes.
+  // The tRPC mutations are fire-and-forget, so the worker may still be running
+  // after the submit handler returns. Listening to the backend completion event
+  // ensures the target database's collection list reflects what was actually copied.
+  useEffect(() => {
+    const electron = window.electron
+    if (!electron) return
+    const handleComplete = (
+      _event: unknown,
+      data: { sourceDatabase: string; targetDatabase: string; targetConnectionId: string; targetCollection?: string }
+    ) => {
+      // Always refresh the target database's collection list (regardless of active connection —
+      // the store is keyed by connectionId:database, so refreshing a non-active connection is safe).
+      useExplorerStore.getState().loadCollections(data.targetDatabase, data.targetConnectionId)
+      // If the target is the active connection, also refresh the database list so a
+      // brand-new target database appears in the tree.
+      if (activeConnection?.profileId === data.targetConnectionId) {
+        loadDatabases()
+      }
+    }
+    electron.ipcRenderer.on('migration:complete', handleComplete)
+    return () => {
+      electron.ipcRenderer.removeAllListeners('migration:complete')
+    }
+  }, [activeConnection?.profileId])
+
   // Auto-focus new folder input when shown
   useEffect(() => {
     if (newFolderName !== null) {
@@ -179,7 +205,7 @@ export function Sidebar() {
         targetDatabase: result.targetDatabase,
         dropTarget: result.dropTarget
       })
-      loadDatabases()
+      // Tree refresh happens via the migration:complete listener (useEffect above).
     } catch (err) {
       alert(`Failed: ${err instanceof Error ? err.message : err}`)
     } finally {
@@ -199,10 +225,7 @@ export function Sidebar() {
         targetCollection: result.targetCollection,
         dropTarget: result.dropTarget
       })
-      // Refresh the target database's collection list
-      await useExplorerStore
-        .getState()
-        .loadCollections(pasteCollectionTarget.database, pasteCollectionTarget.connectionId)
+      // Tree refresh happens via the migration:complete listener (useEffect above).
     } catch (err) {
       alert(`Failed: ${err instanceof Error ? err.message : err}`)
     } finally {

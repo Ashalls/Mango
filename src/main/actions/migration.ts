@@ -315,7 +315,8 @@ export async function copyDatabase(options: CopyDatabaseOptions): Promise<void> 
 
   emitProgress('migration:complete', {
     sourceDatabase: options.sourceDatabase,
-    targetDatabase: options.targetDatabase
+    targetDatabase: options.targetDatabase,
+    targetConnectionId: options.targetConnectionId
   })
 }
 
@@ -389,6 +390,8 @@ export async function copyCollection(options: CopyCollectionOptions): Promise<vo
 
   emitProgress('migration:complete', {
     sourceDatabase: options.sourceDatabase,
-    targetDatabase: options.targetDatabase
+    targetDatabase: options.targetDatabase,
+    targetConnectionId: options.targetConnectionId,
+    targetCollection: options.targetCollection
   })
 }
