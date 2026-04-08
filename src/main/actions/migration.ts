@@ -5,7 +5,7 @@ import { tmpdir } from 'os'
 import { join as pathJoin } from 'path'
 import * as mongoService from '../services/mongodb'
 import * as configService from '../services/config'
-import type { CopyDatabaseOptions, CopyProgress, OperationProgress, CollectionProgress } from '@shared/types'
+import type { CopyDatabaseOptions, CopyCollectionOptions, CopyProgress, OperationProgress, CollectionProgress } from '@shared/types'
 
 function emitProgress(event: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows()
@@ -310,6 +310,80 @@ export async function copyDatabase(options: CopyDatabaseOptions): Promise<void> 
   const wasCancelled = op.collections.some((c) => c.error === 'Cancelled')
   op.status = wasCancelled ? 'error' : op.collections.some((c) => c.status === 'error') ? 'error' : 'done'
   op.currentStep = wasCancelled ? 'Cancelled' : op.status === 'done' ? 'Complete' : 'Completed with errors'
+  if (wasCancelled) op.error = 'Operation cancelled'
+  emitProgress('operation:progress', op)
+
+  emitProgress('migration:complete', {
+    sourceDatabase: options.sourceDatabase,
+    targetDatabase: options.targetDatabase
+  })
+}
+
+export async function copyCollection(options: CopyCollectionOptions): Promise<void> {
+  // Production safety check
+  const connections = configService.loadConnections()
+  const targetProfile = connections.find((c) => c.id === options.targetConnectionId)
+  if (targetProfile?.isProduction) {
+    throw new Error(
+      `Cannot copy to "${targetProfile.name}" — it is tagged as production. ` +
+        'Production connections are protected from mass write operations.'
+    )
+  }
+  if (targetProfile?.isReadOnly) {
+    throw new Error(
+      `Cannot copy to "${targetProfile.name}" — it is marked as read-only. ` +
+        'Disable Read Only in connection settings to allow writes.'
+    )
+  }
+
+  const sourceProfile = connections.find((c) => c.id === options.sourceConnectionId)
+  if (!sourceProfile || !targetProfile) throw new Error('Connection not found')
+
+  const sourceUri = sourceProfile.uri
+  const targetUri = targetProfile.uri
+
+  const opId = `copy-col-${++opCounter}-${Date.now()}`
+  const op: OperationProgress = {
+    id: opId,
+    type: 'copy',
+    label: `Copy ${options.sourceDatabase}.${options.sourceCollection} → ${options.targetDatabase}.${options.targetCollection} on ${targetProfile.name}`,
+    status: 'running',
+    currentStep: `Copying ${options.targetCollection}...`,
+    processed: 0,
+    total: 1,
+    collections: [
+      {
+        name: options.targetCollection,
+        status: 'running',
+        copied: 0,
+        total: 0
+      }
+    ],
+    startedAt: Date.now()
+  }
+  emitProgress('operation:progress', op)
+
+  const colProgress = op.collections[0]
+
+  await copyCollectionInProcess(
+    sourceUri,
+    targetUri,
+    options.sourceDatabase,
+    options.targetDatabase,
+    options.sourceCollection,
+    options.targetCollection,
+    options.dropTarget || false,
+    colProgress,
+    op
+  )
+
+  const wasCancelled = colProgress.error === 'Cancelled'
+  op.status = wasCancelled ? 'error' : colProgress.status === 'error' ? 'error' : 'done'
+  op.currentStep = wasCancelled
+    ? 'Cancelled'
+    : op.status === 'done'
+      ? 'Complete'
+      : 'Completed with errors'
   if (wasCancelled) op.error = 'Operation cancelled'
   emitProgress('operation:progress', op)
 
