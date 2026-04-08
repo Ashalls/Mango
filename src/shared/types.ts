@@ -79,6 +79,16 @@ export interface CopyDatabaseOptions {
   dropTarget?: boolean
 }
 
+export interface CopyCollectionOptions {
+  sourceConnectionId: string
+  sourceDatabase: string
+  sourceCollection: string
+  targetConnectionId: string
+  targetDatabase: string
+  targetCollection: string
+  dropTarget?: boolean
+}
+
 export interface CopyProgress {
   collection: string
   copied: number
