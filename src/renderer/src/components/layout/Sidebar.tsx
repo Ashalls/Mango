@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, ClipboardPaste, Pencil, Trash2, Database, Bot, MessageSquare, Upload, FolderClosed, FolderOpen, FolderPlus } from 'lucide-react'
 import { PasteDatabaseDialog, type PasteDatabaseResult } from '@renderer/components/explorer/PasteDatabaseDialog'
+import { PasteCollectionDialog, type PasteCollectionResult } from '@renderer/components/explorer/PasteCollectionDialog'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -20,11 +21,16 @@ export function Sidebar() {
   const [editProfile, setEditProfile] = useState<ConnectionProfile | null>(null)
   const [showCreateDb, setShowCreateDb] = useState<string | null>(null) // connection ID
   const [search, setSearch] = useState('')
-  const [clipboard, setClipboard] = useState<{
+  const [clipboard, setClipboard] = useState<
+    | { type: 'database'; connectionId: string; database: string }
+    | { type: 'collection'; connectionId: string; database: string; collection: string }
+    | null
+  >(null)
+  const [pasteTarget, setPasteTarget] = useState<string | null>(null) // target connection ID
+  const [pasteCollectionTarget, setPasteCollectionTarget] = useState<{
     connectionId: string
     database: string
   } | null>(null)
-  const [pasteTarget, setPasteTarget] = useState<string | null>(null) // target connection ID
   const [importDump, setImportDump] = useState<{
     connectionId: string
     importDir: string
@@ -117,11 +123,40 @@ export function Sidebar() {
   }
 
   const handleCopyDatabase = (connectionId: string, database: string) => {
-    setClipboard({ connectionId, database })
+    setClipboard({ type: 'database', connectionId, database })
+  }
+
+  const handleCopyCollection = (connectionId: string, database: string, collection: string) => {
+    setClipboard({ type: 'collection', connectionId, database, collection })
+  }
+
+  const handlePasteCollection = async (targetConnectionId: string, targetDatabase: string) => {
+    if (!clipboard || clipboard.type !== 'collection') return
+    const targetProfile = profiles.find((p) => p.id === targetConnectionId)
+    if (targetProfile?.isProduction) {
+      alert('Cannot paste into a production connection. Production connections are protected from mass write operations.')
+      return
+    }
+    if (targetProfile?.isReadOnly) {
+      alert('Cannot paste into a read-only connection. Disable Read Only in connection settings to allow writes.')
+      return
+    }
+    // Ensure we have the target database's collection list cached (for the overwrite dropdown)
+    const colKey = `${targetConnectionId}:${targetDatabase}`
+    const { collections, loadCollections } = useExplorerStore.getState()
+    if (!collections[colKey]) {
+      try {
+        await loadCollections(targetDatabase, targetConnectionId)
+      } catch (err) {
+        alert(`Failed to load collections for ${targetDatabase}: ${err instanceof Error ? err.message : err}`)
+        return
+      }
+    }
+    setPasteCollectionTarget({ connectionId: targetConnectionId, database: targetDatabase })
   }
 
   const handlePasteDatabase = (targetConnectionId: string) => {
-    if (!clipboard) return
+    if (!clipboard || clipboard.type !== 'database') return
     const targetProfile = profiles.find((p) => p.id === targetConnectionId)
     if (targetProfile?.isProduction) {
       alert('Cannot paste into a production connection. Production connections are protected from mass write operations.')
@@ -135,7 +170,7 @@ export function Sidebar() {
   }
 
   const handlePasteSubmit = async (result: PasteDatabaseResult) => {
-    if (!clipboard || !pasteTarget) return
+    if (!clipboard || clipboard.type !== 'database' || !pasteTarget) return
     try {
       await trpc.migration.copyDatabase.mutate({
         sourceConnectionId: clipboard.connectionId,
@@ -149,6 +184,29 @@ export function Sidebar() {
       alert(`Failed: ${err instanceof Error ? err.message : err}`)
     } finally {
       setPasteTarget(null)
+    }
+  }
+
+  const handlePasteCollectionSubmit = async (result: PasteCollectionResult) => {
+    if (!clipboard || clipboard.type !== 'collection' || !pasteCollectionTarget) return
+    try {
+      await trpc.migration.copyCollection.mutate({
+        sourceConnectionId: clipboard.connectionId,
+        sourceDatabase: clipboard.database,
+        sourceCollection: clipboard.collection,
+        targetConnectionId: pasteCollectionTarget.connectionId,
+        targetDatabase: pasteCollectionTarget.database,
+        targetCollection: result.targetCollection,
+        dropTarget: result.dropTarget
+      })
+      // Refresh the target database's collection list
+      await useExplorerStore
+        .getState()
+        .loadCollections(pasteCollectionTarget.database, pasteCollectionTarget.connectionId)
+    } catch (err) {
+      alert(`Failed: ${err instanceof Error ? err.message : err}`)
+    } finally {
+      setPasteCollectionTarget(null)
     }
   }
 
@@ -199,8 +257,11 @@ export function Sidebar() {
                   searchFilter={search}
                   connectionId={profile.id}
                   onCopyDatabase={(db) => handleCopyDatabase(profile.id, db)}
-                  canPaste={clipboard !== null}
+                  canPaste={clipboard?.type === 'database'}
                   onPasteDatabase={() => handlePasteDatabase(profile.id)}
+                  onCopyCollection={(db, col) => handleCopyCollection(profile.id, db, col)}
+                  canPasteCollection={clipboard?.type === 'collection'}
+                  onPasteCollection={(db) => handlePasteCollection(profile.id, db)}
                   isProduction={profile.isProduction}
                   isReadOnly={profile.isReadOnly}
                   connectionName={profile.name}
@@ -562,7 +623,10 @@ export function Sidebar() {
 
         {clipboard && (
           <div className="mt-2 rounded-md border border-dashed border-primary/30 bg-primary/5 px-2 py-1.5 text-[10px] text-primary">
-            Copied: {clipboard.database}
+            Copied:{' '}
+            {clipboard.type === 'database'
+              ? clipboard.database
+              : `${clipboard.database}.${clipboard.collection}`}
           </div>
         )}
       </ScrollArea>
@@ -601,7 +665,7 @@ export function Sidebar() {
         />
       )}
 
-      {pasteTarget && clipboard && (() => {
+      {pasteTarget && clipboard?.type === 'database' && (() => {
         const targetProfile = profiles.find((p) => p.id === pasteTarget)
         const sourceProfile = profiles.find((p) => p.id === clipboard.connectionId)
         const isSameConnection = clipboard.connectionId === pasteTarget
@@ -615,6 +679,30 @@ export function Sidebar() {
             isSameConnection={isSameConnection}
             onSubmit={handlePasteSubmit}
             onCancel={() => setPasteTarget(null)}
+          />
+        )
+      })()}
+
+      {pasteCollectionTarget && clipboard?.type === 'collection' && (() => {
+        const targetProfile = profiles.find((p) => p.id === pasteCollectionTarget.connectionId)
+        const sourceProfile = profiles.find((p) => p.id === clipboard.connectionId)
+        const isSameLocation =
+          clipboard.connectionId === pasteCollectionTarget.connectionId &&
+          clipboard.database === pasteCollectionTarget.database
+        const colKey = `${pasteCollectionTarget.connectionId}:${pasteCollectionTarget.database}`
+        const existingCols =
+          useExplorerStore.getState().collections[colKey]?.map((c) => c.name) ?? []
+        return (
+          <PasteCollectionDialog
+            sourceCollection={clipboard.collection}
+            sourceDatabase={clipboard.database}
+            sourceConnection={sourceProfile?.name || 'Unknown'}
+            targetDatabase={pasteCollectionTarget.database}
+            targetConnection={targetProfile?.name || 'Unknown'}
+            existingCollections={existingCols}
+            isSameLocation={isSameLocation}
+            onSubmit={handlePasteCollectionSubmit}
+            onCancel={() => setPasteCollectionTarget(null)}
           />
         )
       })()}
