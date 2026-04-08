@@ -440,7 +440,7 @@ export function Sidebar() {
                 </ContextMenu.Sub>
               </>
             )}
-            {clipboard && isThisConnected && (
+            {clipboard?.type === 'database' && isThisConnected && (
               <>
                 <ContextMenu.Separator className="my-1 h-px bg-border" />
                 <ContextMenu.Item
