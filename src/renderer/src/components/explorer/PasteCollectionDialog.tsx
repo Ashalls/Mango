@@ -39,9 +39,12 @@ export function PasteCollectionDialog({
     existsAlready && !isSameLocation ? 'overwrite' : 'new'
   )
   const [newColName, setNewColName] = useState(defaultName)
-  const [selectedCol, setSelectedCol] = useState(
-    existsAlready ? sourceCollection : existingCollections[0] || ''
-  )
+  const safeInitialSelected = isSameLocation
+    ? existingCollections.find((c) => c !== sourceCollection) ?? ''
+    : existsAlready
+      ? sourceCollection
+      : existingCollections[0] || ''
+  const [selectedCol, setSelectedCol] = useState(safeInitialSelected)
   const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
