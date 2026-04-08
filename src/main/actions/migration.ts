@@ -39,7 +39,7 @@ const send = (msg) => process.send(msg);
 const config = JSON.parse(process.argv[2]);
 
 async function run() {
-  const { sourceUri, targetUri, sourceDatabase, targetDatabase, colName, dropTarget } = config;
+  const { sourceUri, targetUri, sourceDatabase, targetDatabase, sourceColName, targetColName, dropTarget } = config;
   let sourceClient, targetClient;
   try {
     sourceClient = new MongoClient(sourceUri);
@@ -51,14 +51,14 @@ async function run() {
     const targetDb = targetClient.db(targetDatabase);
 
     if (dropTarget) {
-      try { await targetDb.dropCollection(colName); } catch {}
+      try { await targetDb.dropCollection(targetColName); } catch {}
     }
 
-    const sourceCol = sourceDb.collection(colName);
+    const sourceCol = sourceDb.collection(sourceColName);
     const count = await sourceCol.estimatedDocumentCount().catch(() => 0);
     send({ type: 'total', total: count });
 
-    const targetCol = targetDb.collection(colName);
+    const targetCol = targetDb.collection(targetColName);
     const batchSize = 2000;
     const cursor = sourceCol.find({});
     let batch = [], copied = 0;
@@ -109,14 +109,15 @@ function copyCollectionInProcess(
   targetUri: string,
   sourceDatabase: string,
   targetDatabase: string,
-  colName: string,
+  sourceColName: string,
+  targetColName: string,
   dropTarget: boolean,
   colProgress: CollectionProgress,
   op: OperationProgress
 ): Promise<number> {
   return new Promise((resolve) => {
     const child = fork(COPY_SCRIPT_PATH, [
-      JSON.stringify({ sourceUri, targetUri, sourceDatabase, targetDatabase, colName, dropTarget })
+      JSON.stringify({ sourceUri, targetUri, sourceDatabase, targetDatabase, sourceColName, targetColName, dropTarget })
     ], {
       execArgv: ['--max-old-space-size=4096'],
       silent: true,
@@ -135,11 +136,11 @@ function copyCollectionInProcess(
         case 'progress':
           colProgress.copied = msg.copied
           copied = msg.copied
-          op.currentStep = `Copying ${colName} (${msg.copied.toLocaleString()}/${colProgress.total.toLocaleString()})`
+          op.currentStep = `Copying ${targetColName} (${msg.copied.toLocaleString()}/${colProgress.total.toLocaleString()})`
           emitProgress('operation:progress', op)
           // Legacy event
           emitProgress('migration:progress', {
-            collection: colName, copied: msg.copied, total: colProgress.total, status: 'copying'
+            collection: targetColName, copied: msg.copied, total: colProgress.total, status: 'copying'
           })
           break
         case 'done':
@@ -150,7 +151,7 @@ function copyCollectionInProcess(
           op.processed++
           emitProgress('operation:progress', op)
           emitProgress('migration:progress', {
-            collection: colName, copied: msg.copied, total: msg.total, status: 'done'
+            collection: targetColName, copied: msg.copied, total: msg.total, status: 'done'
           })
           break
         case 'error':
@@ -265,7 +266,7 @@ export async function copyDatabase(options: CopyDatabaseOptions): Promise<void> 
     await copyCollectionInProcess(
       sourceUri, targetUri,
       options.sourceDatabase, options.targetDatabase,
-      colName, options.dropTarget || false,
+      colName, colName, options.dropTarget || false,
       colProgress, op
     )
 
