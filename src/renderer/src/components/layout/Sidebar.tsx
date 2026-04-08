@@ -690,6 +690,9 @@ export function Sidebar() {
           clipboard.connectionId === pasteCollectionTarget.connectionId &&
           clipboard.database === pasteCollectionTarget.database
         const colKey = `${pasteCollectionTarget.connectionId}:${pasteCollectionTarget.database}`
+        // Non-reactive read: handlePasteCollection preloads collections into the store
+        // before setting pasteCollectionTarget, so the snapshot is always populated by
+        // the time this block renders. The dialog captures the list on mount.
         const existingCols =
           useExplorerStore.getState().collections[colKey]?.map((c) => c.name) ?? []
         return (
