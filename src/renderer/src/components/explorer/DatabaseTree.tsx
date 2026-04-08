@@ -18,6 +18,9 @@ interface DatabaseTreeProps {
   onCopyDatabase?: (dbName: string) => void
   canPaste?: boolean
   onPasteDatabase?: () => void
+  onCopyCollection?: (dbName: string, colName: string) => void
+  canPasteCollection?: boolean
+  onPasteCollection?: (dbName: string) => void
   isProduction?: boolean
   claudeAccess?: 'readonly' | 'readwrite'
   claudeDbOverrides?: Record<string, 'readonly' | 'readwrite'>
@@ -29,7 +32,7 @@ interface DatabaseTreeProps {
   connectionName?: string
 }
 
-export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath, onClearDbCodebasePath, isReadOnly, connectionName }: DatabaseTreeProps) {
+export function DatabaseTree({ databases, searchFilter, connectionId, onCopyDatabase, canPaste, onPasteDatabase, onCopyCollection, canPasteCollection, onPasteCollection, isProduction, claudeAccess, claudeDbOverrides, onToggleDbClaude, databaseCodebasePaths, onSetDbCodebasePath, onClearDbCodebasePath, isReadOnly, connectionName }: DatabaseTreeProps) {
   const [expandedDbs, setExpandedDbs] = useState<Set<string>>(new Set())
   const [loadingDbs, setLoadingDbs] = useState<Set<string>>(new Set())
   const [newCollName, setNewCollName] = useState<{ db: string } | null>(null)
@@ -268,6 +271,15 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                   >
                     <ClipboardPaste className="h-3.5 w-3.5" />
                     Paste Database Here
+                  </ContextMenu.Item>
+                )}
+                {canPasteCollection && onPasteCollection && !isProduction && !isReadOnly && (
+                  <ContextMenu.Item
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                    onSelect={() => onPasteCollection(db.name)}
+                  >
+                    <ClipboardPaste className="h-3.5 w-3.5" />
+                    Paste Collection Here
                   </ContextMenu.Item>
                 )}
                 {onToggleDbClaude && (
@@ -533,6 +545,15 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         Open mongosh
                       </ContextMenu.Item>
                       <ContextMenu.Separator className="my-1 h-px bg-border" />
+                      {onCopyCollection && (
+                        <ContextMenu.Item
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                          onSelect={() => onCopyCollection(db.name, col.name)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy Collection
+                        </ContextMenu.Item>
+                      )}
                       {isReadOnly ? (
                         <ContextMenu.Item
                           className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground cursor-not-allowed"
