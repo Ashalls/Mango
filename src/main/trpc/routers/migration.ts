@@ -17,5 +17,23 @@ export const migrationRouter = router({
       // Runs async — progress emitted via IPC events
       migrationActions.copyDatabase(input)
       return { started: true }
+    }),
+
+  copyCollection: procedure
+    .input(
+      z.object({
+        sourceConnectionId: z.string(),
+        sourceDatabase: z.string(),
+        sourceCollection: z.string(),
+        targetConnectionId: z.string(),
+        targetDatabase: z.string(),
+        targetCollection: z.string(),
+        dropTarget: z.boolean().optional()
+      })
+    )
+    .mutation(async ({ input }) => {
+      // Runs async — progress emitted via IPC events
+      migrationActions.copyCollection(input)
+      return { started: true }
     })
 })
