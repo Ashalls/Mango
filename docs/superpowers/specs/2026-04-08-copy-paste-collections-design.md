@@ -127,10 +127,10 @@ export async function copyCollection(options: CopyCollectionOptions): Promise<vo
      type: 'copy',
      label: `Copy ${sourceDatabase}.${sourceCollection} → ${targetDatabase}.${targetCollection} on ${targetProfile.name}`,
      status: 'running',
-     currentStep: `Copying ${sourceCollection}...`,
+     currentStep: `Copying ${targetCollection}...`,
      processed: 0,
      total: 1,
-     collections: [{ name: sourceCollection, status: 'running', copied: 0, total: 0 }],
+     collections: [{ name: targetCollection, status: 'running', copied: 0, total: 0 }],
      startedAt: Date.now(),
    }
    ```
