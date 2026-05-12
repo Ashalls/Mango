@@ -20,13 +20,19 @@ export function ExportDatabaseDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
 
+  const exclusionsKey = `exportExclusions.${connectionId}.${database}`
+
   useEffect(() => {
-    trpc.exportImport.listCollections.query({ connectionId, database }).then((cols) => {
+    Promise.all([
+      trpc.exportImport.listCollections.query({ connectionId, database }) as Promise<{ name: string; type: string }[]>,
+      trpc.settings.get.query({ key: exclusionsKey }) as Promise<string[] | null>
+    ]).then(([cols, savedExclusions]) => {
       setCollections(cols)
-      setSelected(new Set(cols.map((c) => c.name)))
+      const excluded = new Set(Array.isArray(savedExclusions) ? savedExclusions : [])
+      setSelected(new Set(cols.filter((c) => !excluded.has(c.name)).map((c) => c.name)))
       setLoading(false)
     }).catch(() => setLoading(false))
-  }, [connectionId, database])
+  }, [connectionId, database, exclusionsKey])
 
   const allSelected = selected.size === collections.length
   const noneSelected = selected.size === 0
@@ -47,6 +53,8 @@ export function ExportDatabaseDialog({
   }
 
   const handleSubmit = () => {
+    const excluded = collections.filter((c) => !selected.has(c.name)).map((c) => c.name)
+    trpc.settings.set.mutate({ key: exclusionsKey, value: excluded }).catch(() => {})
     if (allSelected) {
       onSubmit(undefined) // all collections — let backend handle it
     } else {
