@@ -14,6 +14,7 @@ let mcpPort: number = 27088
 const isMac = process.platform === 'darwin'
 let updateMainWindow: BrowserWindow | null = null
 let pendingMacUpdateVersion: string | null = null
+let isQuitting = false
 
 /** Resolve a resource file — works in both dev and packaged builds */
 function resourcePath(filename: string): string {
@@ -198,6 +199,18 @@ app.whenReady().then(async () => {
   setToolsMainWindow(mainWindow)
   createIPCHandler({ router: appRouter, windows: [mainWindow] })
 
+  // Mac: hide the window when the user clicks the red X rather than
+  // destroying it, so clicking the dock icon can bring it back without
+  // losing IPC handler and service references to the live window.
+  if (isMac) {
+    mainWindow.on('close', (e) => {
+      if (!isQuitting) {
+        e.preventDefault()
+        mainWindow.hide()
+      }
+    })
+  }
+
   // Wait for main window to be ready, then swap
   mainWindow.once('ready-to-show', () => {
     const splashMinTime = 3000
@@ -249,10 +262,16 @@ app.whenReady().then(async () => {
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      const win = createWindow()
-      createIPCHandler({ router: appRouter, windows: [win] })
+    const w = updateMainWindow
+    if (w && !w.isDestroyed()) {
+      if (!w.isVisible()) w.show()
+      w.focus()
+      return
     }
+    const win = createWindow()
+    updateMainWindow = win
+    createIPCHandler({ router: appRouter, windows: [win] })
+    win.once('ready-to-show', () => win.show())
   })
 })
 
@@ -273,6 +292,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async () => {
+  isQuitting = true
   await stopMcpServer()
   await mongoService.disconnectAll()
 })
