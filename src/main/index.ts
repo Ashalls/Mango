@@ -6,10 +6,14 @@ import { createIPCHandler } from 'electron-trpc/main'
 import { appRouter } from './trpc/router'
 import * as mongoService from './services/mongodb'
 import * as claudeService from './services/claude'
+import * as macUpdater from './services/macUpdater'
 import { startMcpServer, stopMcpServer } from './mcp/server'
 import { setToolsMainWindow } from './mcp/tools'
 
 let mcpPort: number = 27088
+const isMac = process.platform === 'darwin'
+let updateMainWindow: BrowserWindow | null = null
+let pendingMacUpdateVersion: string | null = null
 
 /** Resolve a resource file — works in both dev and packaged builds */
 function resourcePath(filename: string): string {
@@ -109,34 +113,74 @@ app.whenReady().then(async () => {
 
   // Check for updates during splash (production only)
   if (!is.dev) {
-    autoUpdater.autoDownload = true
-    autoUpdater.autoInstallOnAppQuit = true
-    autoUpdater.logger = console
     let splashAlive = true
-    autoUpdater.on('update-available', () => {
+    splash.on('closed', () => { splashAlive = false })
+
+    const setSplashDownloading = (): void => {
       if (splashAlive) {
         splash.webContents.executeJavaScript(
           'document.getElementById("status").innerHTML = "Downloading update<span class=\\"dot\\">.</span><span class=\\"dot\\">.</span><span class=\\"dot\\">.</span>"'
         )
       }
-    })
-    autoUpdater.on('update-not-available', () => {
+    }
+    const setSplashUpToDate = (): void => {
       if (splashAlive) {
         splash.webContents.executeJavaScript(
           'document.getElementById("status").innerText = "Up to date!"'
         )
       }
-    })
-    autoUpdater.on('error', (err) => {
-      console.error('Auto-updater error:', err)
+    }
+    const setSplashFallback = (): void => {
       if (splashAlive) {
         splash.webContents.executeJavaScript(
           'document.getElementById("status").innerText = "Starting..."'
         )
       }
-    })
-    splash.on('closed', () => { splashAlive = false })
-    autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
+    }
+
+    if (isMac) {
+      // Custom updater for Mac — Squirrel.Mac inside electron-updater requires a
+      // signed app, which Mango is not. We download the .dmg ourselves and let
+      // the user drag-replace the app from Finder.
+      macUpdater
+        .checkForUpdate()
+        .then(async (info) => {
+          if (!info) {
+            setSplashUpToDate()
+            return
+          }
+          setSplashDownloading()
+          try {
+            await macUpdater.downloadUpdate(info)
+            pendingMacUpdateVersion = info.version
+            if (updateMainWindow && !updateMainWindow.isDestroyed()) {
+              updateMainWindow.webContents.send('update:downloaded', {
+                version: info.version,
+                requiresManualInstall: true
+              })
+              pendingMacUpdateVersion = null
+            }
+          } catch (err) {
+            console.error('Mac update download failed:', err)
+            setSplashFallback()
+          }
+        })
+        .catch((err) => {
+          console.error('Mac update check failed:', err)
+          setSplashFallback()
+        })
+    } else {
+      autoUpdater.autoDownload = true
+      autoUpdater.autoInstallOnAppQuit = true
+      autoUpdater.logger = console
+      autoUpdater.on('update-available', setSplashDownloading)
+      autoUpdater.on('update-not-available', setSplashUpToDate)
+      autoUpdater.on('error', (err) => {
+        console.error('Auto-updater error:', err)
+        setSplashFallback()
+      })
+      autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
+    }
   }
 
   // Start MCP server while splash is showing
@@ -149,6 +193,7 @@ app.whenReady().then(async () => {
 
   // Create main window (hidden)
   const mainWindow = createWindow()
+  updateMainWindow = mainWindow
   claudeService.setMainWindow(mainWindow)
   setToolsMainWindow(mainWindow)
   createIPCHandler({ router: appRouter, windows: [mainWindow] })
@@ -167,17 +212,38 @@ app.whenReady().then(async () => {
 
       // Update notification — always notify user in the main window
       if (!is.dev) {
-        // Replace all previous listeners with the main window notification
-        autoUpdater.removeAllListeners('update-downloaded')
-        autoUpdater.on('update-downloaded', (info) => {
-          console.log('Update downloaded:', info.version)
-          mainWindow.webContents.send('update:downloaded', { version: info.version })
-        })
-        // If an update was already downloaded during splash, notify immediately
-        // Otherwise check again now (splash check may have started download)
-        autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
-        // Re-check every 30 minutes
-        setInterval(() => autoUpdater.checkForUpdates().catch((err) => console.error('Update re-check failed:', err)), 30 * 60 * 1000)
+        if (isMac) {
+          // Flush any update that finished downloading during the splash
+          if (pendingMacUpdateVersion) {
+            mainWindow.webContents.send('update:downloaded', {
+              version: pendingMacUpdateVersion,
+              requiresManualInstall: true
+            })
+            pendingMacUpdateVersion = null
+          }
+          const recheckMac = async (): Promise<void> => {
+            try {
+              const info = await macUpdater.checkForUpdate()
+              if (!info) return
+              await macUpdater.downloadUpdate(info)
+              mainWindow.webContents.send('update:downloaded', {
+                version: info.version,
+                requiresManualInstall: true
+              })
+            } catch (err) {
+              console.error('Mac update re-check failed:', err)
+            }
+          }
+          setInterval(recheckMac, 30 * 60 * 1000)
+        } else {
+          autoUpdater.removeAllListeners('update-downloaded')
+          autoUpdater.on('update-downloaded', (info) => {
+            console.log('Update downloaded:', info.version)
+            mainWindow.webContents.send('update:downloaded', { version: info.version })
+          })
+          autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
+          setInterval(() => autoUpdater.checkForUpdates().catch((err) => console.error('Update re-check failed:', err)), 30 * 60 * 1000)
+        }
       }
     }, remaining)
   })
@@ -190,7 +256,11 @@ app.whenReady().then(async () => {
   })
 })
 
-ipcMain.handle('update:install', () => {
+ipcMain.handle('update:install', async () => {
+  if (isMac) {
+    await macUpdater.installUpdate(updateMainWindow ?? undefined)
+    return
+  }
   autoUpdater.quitAndInstall()
 })
 

@@ -19,11 +19,16 @@ export function TopBar() {
   const isPanelOpen = useClaudeStore((s) => s.isPanelOpen)
   const { theme, setTheme, catSounds, setCatSounds } = useSettingsStore()
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [updateManualInstall, setUpdateManualInstall] = useState(false)
   const [valueSearchOpen, setValueSearchOpen] = useState(false)
 
   useEffect(() => {
-    const handler = (_event: unknown, data: { version: string }) => {
+    const handler = (
+      _event: unknown,
+      data: { version: string; requiresManualInstall?: boolean }
+    ) => {
       setUpdateVersion(data.version)
+      setUpdateManualInstall(Boolean(data.requiresManualInstall))
     }
     window.electron?.ipcRenderer.on('update:downloaded', handler)
     return () => {
@@ -92,7 +97,7 @@ export function TopBar() {
               className="rounded bg-green-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-green-500"
               onClick={() => window.electron?.ipcRenderer.invoke('update:install')}
             >
-              Restart
+              {updateManualInstall ? 'Install' : 'Restart'}
             </button>
           </div>
         )}
