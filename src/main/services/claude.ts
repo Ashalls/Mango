@@ -23,6 +23,24 @@ function getClaudeExecutablePath(): string | undefined {
   )
 }
 
+/**
+ * In a packaged Electron app launched from Finder, PATH is limited to
+ * /usr/bin:/bin:/usr/sbin:/sbin and the SDK's default `spawn("node", ...)`
+ * fails with ENOENT. Re-route the spawn to Electron itself running as
+ * Node — ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave like
+ * node when launched with a JS file argument.
+ */
+function getSpawnOverrides(): {
+  executable?: 'node' | 'bun' | 'deno'
+  env?: NodeJS.ProcessEnv
+} {
+  if (!app.isPackaged) return {}
+  return {
+    executable: process.execPath as 'node',
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+  }
+}
+
 let mainWindow: BrowserWindow | null = null
 let activeAbortController: AbortController | null = null
 
@@ -178,6 +196,7 @@ export async function sendMessage(
       prompt: message,
       options: {
         pathToClaudeCodeExecutable: getClaudeExecutablePath(),
+        ...getSpawnOverrides(),
         systemPrompt: buildSystemPrompt(context),
         model: 'claude-sonnet-4-5-20250929',
         abortController: activeAbortController,
