@@ -16,10 +16,19 @@ export const exportImportRouter = router({
     .input(z.object({
       database: z.string(),
       collection: z.string(),
-      format: z.enum(['json', 'csv']).default('json')
+      format: z.enum(['json', 'csv', 'ndjson']).default('json'),
+      filter: z.record(z.unknown()).optional(),
+      projection: z.record(z.number()).nullable().optional(),
+      sort: z.record(z.number()).nullable().optional(),
+      limit: z.number().int().positive().optional()
     }))
     .mutation(async ({ input }) => {
-      return exportImportActions.exportCollection(input.database, input.collection, input.format)
+      return exportImportActions.exportCollection(input.database, input.collection, input.format, {
+        filter: input.filter,
+        projection: input.projection ?? null,
+        sort: input.sort ?? null,
+        limit: input.limit
+      })
     }),
 
   exportDatabaseDump: procedure

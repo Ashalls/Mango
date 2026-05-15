@@ -4,10 +4,30 @@ import { execFile, fork, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { tmpdir } from 'os'
 import { join as pathJoin } from 'path'
+import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import * as configService from '../services/config'
 import { serializeDocuments, serializeDocument } from '../services/serialize'
 import type { OperationProgress } from '@shared/types'
+
+/** Recursively convert 24-char hex strings to ObjectId in filter values */
+function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === 'string' && /^[0-9a-f]{24}$/i.test(value)) {
+      result[key] = new ObjectId(value)
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((v) =>
+        typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
+      )
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = convertObjectIds(value as Record<string, unknown>)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -698,57 +718,119 @@ function emitProgress(event: string, data: unknown): void {
   }
 }
 
+export interface ExportCollectionOptions {
+  filter?: Record<string, unknown>
+  projection?: Record<string, number> | null
+  sort?: Record<string, number> | null
+  limit?: number
+  /** Pre-computed CSV headers; if omitted for CSV we sample the cursor's first batch. */
+  csvHeaders?: string[]
+}
+
+function csvEscape(val: unknown): string {
+  if (val === null || val === undefined) return ''
+  const str = typeof val === 'object' ? JSON.stringify(val) : String(val)
+  return str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')
+    ? `"${str.replace(/"/g, '""')}"`
+    : str
+}
+
 export async function exportCollection(
   database: string,
   collection: string,
-  format: 'json' | 'csv' = 'json'
+  format: 'json' | 'csv' | 'ndjson' = 'json',
+  options: ExportCollectionOptions = {}
 ): Promise<{ path: string; count: number } | null> {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
 
+  const ext = format === 'csv' ? 'csv' : format === 'ndjson' ? 'ndjson' : 'json'
+  const filterLabel =
+    options.filter && Object.keys(options.filter).length > 0 ? '-filtered' : ''
+
   const { filePath, canceled } = await dialog.showSaveDialog(win, {
     title: `Export ${collection}`,
-    defaultPath: `${collection}.${format}`,
+    defaultPath: `${collection}${filterLabel}.${ext}`,
     filters:
-      format === 'json'
-        ? [{ name: 'JSON', extensions: ['json'] }]
-        : [{ name: 'CSV', extensions: ['csv'] }]
+      format === 'csv'
+        ? [{ name: 'CSV', extensions: ['csv'] }]
+        : format === 'ndjson'
+        ? [{ name: 'NDJSON', extensions: ['ndjson', 'jsonl'] }]
+        : [{ name: 'JSON', extensions: ['json'] }]
   })
 
   if (canceled || !filePath) return null
 
   const db = mongoService.getDb(database)
-  const docs = await db.collection(collection).find({}).toArray()
-  const serialized = serializeDocuments(docs as Record<string, unknown>[])
+  const processedFilter = convertObjectIds(options.filter ?? {})
 
-  if (format === 'json') {
-    writeFileSync(filePath, JSON.stringify(serialized, null, 2))
-  } else {
-    if (serialized.length === 0) {
-      writeFileSync(filePath, '')
-    } else {
-      const headers = new Set<string>()
-      for (const doc of serialized) {
-        for (const key of Object.keys(doc)) headers.add(key)
+  let cursor = db.collection(collection).find(processedFilter)
+  if (options.projection) cursor = cursor.project(options.projection)
+  if (options.sort) cursor = cursor.sort(options.sort as Record<string, 1 | -1>)
+  if (options.limit && options.limit > 0) cursor = cursor.limit(options.limit)
+
+  const ws = createWriteStream(filePath, { encoding: 'utf-8' })
+  const write = (chunk: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (ws.write(chunk)) resolve()
+      else ws.once('drain', () => resolve())
+      ws.once('error', reject)
+    })
+
+  let count = 0
+
+  try {
+    if (format === 'json') {
+      await write('[\n')
+      let first = true
+      for await (const raw of cursor) {
+        const doc = serializeDocument(raw as Record<string, unknown>)
+        await write((first ? '' : ',\n') + JSON.stringify(doc, null, 2))
+        first = false
+        count++
       }
-      const headerRow = Array.from(headers)
-      const rows = serialized.map((doc) =>
-        headerRow
-          .map((h) => {
-            const val = doc[h]
-            if (val === null || val === undefined) return ''
-            const str = typeof val === 'object' ? JSON.stringify(val) : String(val)
-            return str.includes(',') || str.includes('"') || str.includes('\n')
-              ? `"${str.replace(/"/g, '""')}"`
-              : str
-          })
-          .join(',')
-      )
-      writeFileSync(filePath, [headerRow.join(','), ...rows].join('\n'))
+      await write('\n]\n')
+    } else if (format === 'ndjson') {
+      for await (const raw of cursor) {
+        const doc = serializeDocument(raw as Record<string, unknown>)
+        await write(JSON.stringify(doc) + '\n')
+        count++
+      }
+    } else {
+      // CSV: discover headers across the result set as we stream, buffering rows
+      // when no explicit header list is given. For large exports, pre-supplied
+      // csvHeaders skip the buffering step entirely.
+      if (options.csvHeaders && options.csvHeaders.length > 0) {
+        const headers = options.csvHeaders
+        await write(headers.map(csvEscape).join(',') + '\n')
+        for await (const raw of cursor) {
+          const doc = serializeDocument(raw as Record<string, unknown>) as Record<string, unknown>
+          await write(headers.map((h) => csvEscape(doc[h])).join(',') + '\n')
+          count++
+        }
+      } else {
+        const buffered: Record<string, unknown>[] = []
+        const headerSet = new Set<string>()
+        for await (const raw of cursor) {
+          const doc = serializeDocument(raw as Record<string, unknown>) as Record<string, unknown>
+          for (const key of Object.keys(doc)) headerSet.add(key)
+          buffered.push(doc)
+          count++
+        }
+        const headers = Array.from(headerSet)
+        await write(headers.map(csvEscape).join(',') + '\n')
+        for (const doc of buffered) {
+          await write(headers.map((h) => csvEscape(doc[h])).join(',') + '\n')
+        }
+      }
     }
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      ws.end((err?: Error | null) => (err ? reject(err) : resolve()))
+    })
   }
 
-  return { path: filePath, count: serialized.length }
+  return { path: filePath, count }
 }
 
 export async function listDatabaseCollections(

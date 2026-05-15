@@ -5,6 +5,7 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
 import { InsertDocumentsDialog } from './InsertDocumentsDialog'
 import { UpdateManyDialog } from './UpdateManyDialog'
+import { ExportDocumentsDialog } from './ExportDocumentsDialog'
 
 export function BulkToolbar() {
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
@@ -12,6 +13,7 @@ export function BulkToolbar() {
 
   const [insertOpen, setInsertOpen] = useState(false)
   const [updateOpen, setUpdateOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
 
   const ids = activeTab?.selectedDocIds ?? []
   const hasSelection = ids.length > 0
@@ -83,6 +85,15 @@ export function BulkToolbar() {
         <Button
           variant="ghost"
           size="sm"
+          className="h-6 text-xs text-purple-400 hover:text-purple-300"
+          onClick={() => setExportOpen(true)}
+          title="Export documents to JSON / NDJSON / CSV"
+        >
+          <Download className="mr-1 h-3 w-3" /> Export
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           className="h-6 text-xs text-amber-400 hover:text-amber-300 ml-auto"
           onClick={async () => {
             if (!activeTab) return
@@ -116,6 +127,16 @@ export function BulkToolbar() {
         collection={activeTab.collection}
         currentFilter={activeTab.filter}
         onUpdated={() => executeQuery()}
+      />
+
+      <ExportDocumentsDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        database={activeTab.database}
+        collection={activeTab.collection}
+        currentFilter={activeTab.filter}
+        currentProjection={activeTab.projection}
+        currentSort={activeTab.sort}
       />
     </>
   )
