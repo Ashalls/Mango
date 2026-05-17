@@ -10,6 +10,12 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - 'node_modules/@anthropic-ai/claude-agent-sdk/**/*'
+  # Audio elements stream via HTTP range requests; ASAR doesn't support
+  # them, so MP3 playback from inside the archive cuts off after the first
+  # ~100 ms. Unpack the renderer's bundled audio assets so Chromium can
+  # stream them as real files. (The cat-sounds: meow on launch, purr on
+  # Claude success, hiss on Claude failure.)
+  - 'out/renderer/assets/*.mp3'
 extraResources:
   - from: resources/
     to: .
