@@ -7,8 +7,16 @@ import {
   useSensor,
   useSensors,
   closestCenter,
-  type DragEndEvent
+  type DragEndEvent,
+  type Modifier
 } from '@dnd-kit/core'
+
+// Lock drag motion to the X axis — the tab strip is a single horizontal row,
+// vertical motion would visually detach the tab from the bar.
+const restrictToHorizontalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  y: 0
+})
 import {
   SortableContext,
   horizontalListSortingStrategy,
@@ -202,7 +210,12 @@ export function TabBar() {
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+      modifiers={[restrictToHorizontalAxis]}
+    >
       <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
         <div
           ref={containerRef}
