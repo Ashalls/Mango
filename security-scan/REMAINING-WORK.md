@@ -296,6 +296,40 @@ I reverted the Electron major bump after seeing the native-build failure compoun
 
 Then verify `pnpm dist:win` and `pnpm dist:mac` produce working artifacts. Electron 35 → 39 is generally low-impact for apps using `contextIsolation: true` (which this app does post-Batch B), but there are minor API changes worth testing.
 
+### Sandbox: true + preload refactor (H7 follow-up)
+
+Batch B set `sandbox: true` initially but reverted because `src/preload/index.ts`
+uses `process.once('loaded', ...)` which is unavailable in sandboxed preload
+scripts. The other H7 mitigations (will-navigate, will-attach-webview,
+webSecurity, allowRunningInsecureContent) are still in place.
+
+To flip sandbox back on:
+- Drop the `process.once('loaded', ...)` wrapper around `exposeElectronTRPC()`
+  in `src/preload/index.ts` — `contextBridge` + `ipcRenderer` calls work
+  unwrapped in sandboxed preload.
+- Verify `@electron-toolkit/preload`'s `electronAPI` still works (it uses
+  only sandbox-safe Electron APIs, should be fine).
+- Set `sandbox: true` in `src/main/index.ts` createWindow.
+
+Effort: <1 hour.
+
+### Bundle Monaco locally (CSP hardening)
+
+Batch B's CSP currently allows `https://cdn.jsdelivr.net` for script-src,
+style-src, font-src, and connect-src because `@monaco-editor/react` fetches
+the editor's runtime from jsdelivr by default. We should:
+- Add `monaco-editor` as a direct dep (or rely on the transitive one).
+- Install `vite-plugin-monaco-editor` (or use the loader.config pattern
+  with the locally-bundled `monaco-editor`).
+- Call `loader.config({ monaco })` at app boot so `@monaco-editor/react`
+  uses the bundled copy.
+- Drop the `cdn.jsdelivr.net` allowance from the CSP in
+  `src/main/index.ts`.
+
+This makes Monaco available offline (currently dev mode + auto-update
+both need internet for Monaco to load) and tightens the CSP. Effort:
+half session.
+
 ### Renderer code-signing publisher
 
 Once you have an EV signing cert, set `nsis.publisherName` in `electron-builder.yml` to the exact Subject CN. Otherwise SmartScreen will treat each new cert as a fresh untrusted publisher.

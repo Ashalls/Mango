@@ -81,7 +81,11 @@ function createWindow(): BrowserWindow {
     icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: true,
+      // sandbox: true would be ideal (H7 in security-scan/plan.md), but
+      // electron-trpc's preload uses process.once('loaded', ...) which is
+      // not available in sandboxed preload. Flipping this back requires
+      // refactoring src/preload/index.ts — tracked in REMAINING-WORK.md.
+      sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
@@ -138,18 +142,26 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.mango.app')
 
   // Content Security Policy — defense in depth against a renderer XSS chain.
-  // Permits inline styles (Tailwind injected styles + Monaco) and loopback
-  // connect for the MCP/tRPC IPC bridge. Vite dev needs 'unsafe-eval' for HMR.
+  // Permits inline styles (Tailwind + Monaco), loopback connect for the
+  // MCP/tRPC IPC bridge, and cdn.jsdelivr.net for Monaco editor's runtime
+  // bundle (loaded by @monaco-editor/react by default). Vite dev needs
+  // 'unsafe-eval' for HMR.
+  //
+  // Future hardening: bundle Monaco locally via a Vite plugin so we can
+  // drop the jsdelivr allowance — tracked in security-scan/REMAINING-WORK.md.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const isDev = !!process.env['ELECTRON_RENDERER_URL']
-    const scriptSrc = isDev ? "'self' 'unsafe-eval' 'unsafe-inline'" : "'self' 'unsafe-inline'"
+    const MONACO_CDN = 'https://cdn.jsdelivr.net'
+    const scriptSrc = isDev
+      ? `'self' 'unsafe-eval' 'unsafe-inline' ${MONACO_CDN}`
+      : `'self' 'unsafe-inline' ${MONACO_CDN}`
     const csp = [
       "default-src 'self'",
       `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline'",
+      `style-src 'self' 'unsafe-inline' ${MONACO_CDN}`,
       "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* https://api.github.com",
+      `font-src 'self' data: ${MONACO_CDN}`,
+      `connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* https://api.github.com ${MONACO_CDN}`,
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "base-uri 'self'",
