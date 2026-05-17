@@ -1,0 +1,45 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    groups:
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      dnd-kit:
+        patterns:
+          - "@dnd-kit/*"
+      types:
+        patterns:
+          - "@types/*"
+      electron-toolkit:
+        patterns:
+          - "@electron-toolkit/*"
+    ignore:
+      # Electron major bumps are breaking — review manually
+      - dependency-name: electron
+        update-types:
+          - version-update:semver-major
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "chore(ci)"
