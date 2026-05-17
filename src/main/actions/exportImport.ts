@@ -1,8 +1,8 @@
-import { writeFileSync, readFileSync, existsSync, createWriteStream, createReadStream, statSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, createWriteStream, createReadStream, statSync, mkdirSync } from 'fs'
 import { app, dialog, BrowserWindow } from 'electron'
 import { execFile, fork, ChildProcess } from 'child_process'
 import { promisify } from 'util'
-import { tmpdir } from 'os'
+import { randomBytes } from 'crypto'
 import { join as pathJoin } from 'path'
 import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
@@ -30,6 +30,35 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
 }
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * Write a YAML config file containing the URI so mongodump/mongorestore can
+ * read it via --config instead of taking it as an argv. Avoids leaking the
+ * URI (with embedded credentials) to other local users via /proc/PID/cmdline
+ * or `ps`. Returns the path; caller must unlink after use.
+ */
+function writeMongoToolConfig(uri: string): string {
+  const dir = pathJoin(app.getPath('userData'), 'workers')
+  try { mkdirSync(dir, { recursive: true, mode: 0o700 }) } catch { /* exists */ }
+  const path = pathJoin(dir, `mongocfg-${randomBytes(8).toString('hex')}.yaml`)
+  // Quote the URI per YAML — single-quote with internal '' escaping.
+  const yaml = `uri: '${uri.replace(/'/g, "''")}'\n`
+  writeFileSync(path, yaml, { mode: 0o600 })
+  return path
+}
+
+async function runMongoTool(
+  bin: 'mongodump' | 'mongorestore',
+  uri: string,
+  args: string[]
+): Promise<void> {
+  const cfg = writeMongoToolConfig(uri)
+  try {
+    await execFileAsync(bin, ['--config', cfg, ...args])
+  } finally {
+    try { require('fs').unlinkSync(cfg) } catch { /* best-effort */ }
+  }
+}
 
 /** Yield to the event loop so the UI stays responsive during long operations */
 function yieldToEventLoop(): Promise<void> {
@@ -142,9 +171,14 @@ async function* streamJsonArray(
  * Runs in a separate thread with its own MongoDB connection.
  * Communicates progress via parentPort messages.
  */
-// Write worker scripts to temp files on startup so fork() can use them
-const IMPORT_SCRIPT_PATH = pathJoin(tmpdir(), 'mango-import-worker.js')
-const EXPORT_SCRIPT_PATH = pathJoin(tmpdir(), 'mango-export-worker.js')
+// Worker scripts live in userData (per-user, 0700 dir) with a random suffix
+// so other local users / processes can't race a malicious replacement into
+// place between Mango runs.
+const WORKER_DIR = pathJoin(app.getPath('userData'), 'workers')
+try { mkdirSync(WORKER_DIR, { recursive: true, mode: 0o700 }) } catch { /* exists */ }
+const WORKER_NONCE = randomBytes(8).toString('hex')
+const IMPORT_SCRIPT_PATH = pathJoin(WORKER_DIR, `import-worker-${WORKER_NONCE}.js`)
+const EXPORT_SCRIPT_PATH = pathJoin(WORKER_DIR, `export-worker-${WORKER_NONCE}.js`)
 
 // Single-collection import worker — streams JSON line-by-line to handle any file size
 const IMPORT_WORKER_SCRIPT = `
@@ -154,7 +188,7 @@ const { readFileSync, existsSync, createReadStream, statSync } = require('fs');
 const { createInterface } = require('readline');
 const path = require('path');
 const send = (msg) => process.send(msg);
-const config = JSON.parse(process.argv[2]);
+const config = JSON.parse(process.env.MANGO_WORKER_CONFIG || '{}');
 
 function deserialize(doc) {
   if (doc === null || doc === undefined) return doc;
@@ -167,7 +201,12 @@ function deserialize(doc) {
   if (doc.$uuid) return new UUID(doc.$uuid);
   if (doc.$binary && doc.$type) return new Binary(Buffer.from(doc.$binary, 'base64'), parseInt(doc.$type, 16));
   if (doc.$timestamp) return new Timestamp({ t: doc.$timestamp.t, i: doc.$timestamp.i });
-  if (doc.$regex) return new RegExp(doc.$regex, doc.$options || '');
+  if (doc.$regex) {
+    const pat = String(doc.$regex);
+    const flags = String(doc.$options || '').replace(/[^gimsuy]/g, '');
+    if (pat.length > 256) return pat; // suspicious; keep as string
+    try { return new RegExp(pat, flags); } catch { return pat; }
+  }
   const r = {};
   for (const [k, v] of Object.entries(doc)) r[k] = deserialize(v);
   return r;
@@ -289,7 +328,7 @@ const { MongoClient, ObjectId, Binary, Decimal128, Long, Timestamp, UUID } = req
 const { writeFileSync, mkdirSync, createWriteStream } = require('fs');
 const path = require('path');
 const send = (msg) => process.send(msg);
-const config = JSON.parse(process.argv[2]);
+const config = JSON.parse(process.env.MANGO_WORKER_CONFIG || '{}');
 
 function serialize(doc) {
   if (doc === null || doc === undefined) return doc;
@@ -397,14 +436,21 @@ const activeProcesses = new Map<string, ChildProcess>()
 /** Abort controllers for cancellable operations */
 const activeOperations = new Map<string, AbortController>()
 
-// Write worker scripts to temp files
-try { writeFileSync(IMPORT_SCRIPT_PATH, IMPORT_WORKER_SCRIPT) } catch {}
-try { writeFileSync(EXPORT_SCRIPT_PATH, EXPORT_WORKER_SCRIPT) } catch {}
+// Write worker scripts to per-user dir with 0600 mode
+try { writeFileSync(IMPORT_SCRIPT_PATH, IMPORT_WORKER_SCRIPT, { mode: 0o600 }) } catch {}
+try { writeFileSync(EXPORT_SCRIPT_PATH, EXPORT_WORKER_SCRIPT, { mode: 0o600 }) } catch {}
 
 export function cancelOperation(opId: string): boolean {
   const proc = activeProcesses.get(opId)
   if (proc) {
-    proc.kill('SIGKILL')
+    // Graceful shutdown — give the worker a chance to flush its current
+    // batch and close its Mongo client cleanly. Force-kill after 5s if it
+    // doesn't exit, to avoid hanging the UI.
+    proc.kill('SIGTERM')
+    const killer = setTimeout(() => {
+      if (!proc.killed) proc.kill('SIGKILL')
+    }, 5000)
+    proc.once('exit', () => clearTimeout(killer))
     activeProcesses.delete(opId)
     return true
   }
@@ -432,12 +478,15 @@ function importCollectionInProcess(
   op: OperationProgress
 ): Promise<number> {
   return new Promise((resolve) => {
-    const child = fork(IMPORT_SCRIPT_PATH, [
-      JSON.stringify({ uri, database, importDir, file, colName, dropTarget })
-    ], {
+    const child = fork(IMPORT_SCRIPT_PATH, [], {
       execArgv: ['--max-old-space-size=8192'],
       silent: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter) }
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter),
+        MANGO_WORKER_CONFIG: JSON.stringify({ uri, database, importDir, file, colName, dropTarget })
+      }
     })
 
     activeProcesses.set(op.id, child)
@@ -539,8 +588,10 @@ async function runImportWorker(
     )
     totalDocs += copied
 
-    // Check if cancelled
-    if (colProgress.status === 'error' && colProgress.error === 'Cancelled') break
+    // Check if cancelled — colProgress.status is mutated by the child message
+    // handler so TS's narrowing here is wrong.
+    const cp = colProgress as { status: string; error?: string }
+    if (cp.status === 'error' && cp.error === 'Cancelled') break
   }
 
   // Handle views (small, can run on main thread)
@@ -601,12 +652,15 @@ function runExportWorker(
   collections?: string[]
 ): Promise<{ path: string }> {
   return new Promise((resolve, reject) => {
-    const child = fork(EXPORT_SCRIPT_PATH, [
-      JSON.stringify({ uri, database, outDir, collections })
-    ], {
+    const child = fork(EXPORT_SCRIPT_PATH, [], {
       execArgv: ['--max-old-space-size=8192'],
       silent: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter) }
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter),
+        MANGO_WORKER_CONFIG: JSON.stringify({ uri, database, outDir, collections })
+      }
     })
 
     activeProcesses.set(op.id, child)
@@ -865,7 +919,7 @@ export async function exportDatabaseDump(
   // Try mongodump first (only for full database exports)
   if (!collections) {
     try {
-      await execFileAsync('mongodump', ['--uri', profile.uri, '--db', database, '--out', outDir])
+      await runMongoTool('mongodump', profile.uri, ['--db', database, '--out', outDir])
       const opId = `export-${++opCounter}-${Date.now()}`
       const op: OperationProgress = {
         id: opId, type: 'export', label: `Export ${database} from ${profile.name}`,
@@ -913,9 +967,9 @@ export async function importDatabaseDump(
   // Try mongorestore first (only for full database imports)
   if (!collections) {
     try {
-      const args = ['--uri', profile!.uri, '--db', database, '--dir', importDir]
+      const args = ['--db', database, '--dir', importDir]
       if (dropExisting) args.push('--drop')
-      await execFileAsync('mongorestore', args)
+      await runMongoTool('mongorestore', profile!.uri, args)
       return { collections: -1, documents: -1 }
     } catch { /* Fall back to worker-based JSON import */ }
   }
@@ -1026,9 +1080,9 @@ export async function importDatabaseFromDump(
   // Try mongorestore first (only for full database imports)
   if (!collections) {
     try {
-      const args = ['--uri', profile.uri, '--db', targetDatabase, '--dir', importDir]
+      const args = ['--db', targetDatabase, '--dir', importDir]
       if (dropTarget) args.push('--drop')
-      await execFileAsync('mongorestore', args)
+      await runMongoTool('mongorestore', profile.uri, args)
       return { database: targetDatabase, collections: -1, documents: -1 }
     } catch { /* Fall back to worker-based JSON import */ }
   }

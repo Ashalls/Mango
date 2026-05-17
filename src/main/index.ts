@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, nativeImage, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, nativeImage, ipcMain, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -15,6 +15,25 @@ const isMac = process.platform === 'darwin'
 let updateMainWindow: BrowserWindow | null = null
 let pendingMacUpdateVersion: string | null = null
 let isQuitting = false
+
+/** Recursively schedule fn with ±30% jitter — avoids synchronized polling
+ * across all installed clients hitting GitHub at the same minute. */
+function scheduleJittered(fn: () => void, baseMs: number): void {
+  const jitter = baseMs * (0.7 + Math.random() * 0.6)
+  setTimeout(() => {
+    try { fn() } catch (e) { console.error(e) }
+    scheduleJittered(fn, baseMs)
+  }, jitter)
+}
+
+/** Escape a value for safe injection into executeJavaScript. */
+function setSplashText(splash: BrowserWindow, id: string, text: string, asHtml = false): void {
+  if (splash.isDestroyed()) return
+  const prop = asHtml ? 'innerHTML' : 'innerText'
+  splash.webContents.executeJavaScript(
+    `(()=>{const el=document.getElementById(${JSON.stringify(id)});if(el)el.${prop}=${JSON.stringify(text)};})()`
+  ).catch(() => {})
+}
 
 /** Resolve a resource file — works in both dev and packaged builds */
 function resourcePath(filename: string): string {
@@ -62,15 +81,38 @@ function createWindow(): BrowserWindow {
     icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
+      // sandbox: true would be ideal (H7 in security-scan/plan.md), but
+      // electron-trpc's preload uses process.once('loaded', ...) which is
+      // not available in sandboxed preload. Flipping this back requires
+      // refactoring src/preload/index.ts — tracked in REMAINING-WORK.md.
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false
     }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // Block navigation to external origins — preserves loopback/file/devtools but
+  // prevents the renderer from being navigated away by injected content.
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    try {
+      const u = new URL(url)
+      const isDev = !!process.env['ELECTRON_RENDERER_URL']
+      const allowed =
+        u.protocol === 'file:' ||
+        u.protocol === 'devtools:' ||
+        (isDev && u.hostname === 'localhost') ||
+        (isDev && u.hostname === '127.0.0.1')
+      if (!allowed) e.preventDefault()
+    } catch {
+      e.preventDefault()
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -99,18 +141,54 @@ if (!gotTheLock) {
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.mango.app')
 
+  // Content Security Policy — defense in depth against a renderer XSS chain.
+  // Permits inline styles (Tailwind + Monaco), loopback connect for the
+  // MCP/tRPC IPC bridge, and cdn.jsdelivr.net for Monaco editor's runtime
+  // bundle (loaded by @monaco-editor/react by default). Vite dev needs
+  // 'unsafe-eval' for HMR.
+  //
+  // Future hardening: bundle Monaco locally via a Vite plugin so we can
+  // drop the jsdelivr allowance — tracked in security-scan/REMAINING-WORK.md.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const isDev = !!process.env['ELECTRON_RENDERER_URL']
+    const MONACO_CDN = 'https://cdn.jsdelivr.net'
+    const scriptSrc = isDev
+      ? `'self' 'unsafe-eval' 'unsafe-inline' ${MONACO_CDN}`
+      : `'self' 'unsafe-inline' ${MONACO_CDN}`
+    const csp = [
+      "default-src 'self'",
+      `script-src ${scriptSrc}`,
+      `style-src 'self' 'unsafe-inline' ${MONACO_CDN}`,
+      "img-src 'self' data: blob:",
+      `font-src 'self' data: ${MONACO_CDN}`,
+      `connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* https://api.github.com ${MONACO_CDN}`,
+      "worker-src 'self' blob:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'none'"
+    ].join('; ')
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp]
+      }
+    })
+  })
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+    // Reject preload changes from <webview> and prevent <webview> attachment
+    window.webContents.on('will-attach-webview', (e) => e.preventDefault())
   })
 
   // Show splash
   const splash = createSplashWindow()
   const splashStart = Date.now()
 
-  // Set version on splash screen
-  splash.webContents.executeJavaScript(
-    `document.getElementById("version").innerText = "v${app.getVersion()}"`
-  )
+  // Set version on splash screen (escaped)
+  splash.webContents.once('did-finish-load', () => {
+    setSplashText(splash, 'version', `v${app.getVersion()}`)
+  })
 
   // Check for updates during splash (production only)
   if (!is.dev) {
@@ -119,24 +197,20 @@ app.whenReady().then(async () => {
 
     const setSplashDownloading = (): void => {
       if (splashAlive) {
-        splash.webContents.executeJavaScript(
-          'document.getElementById("status").innerHTML = "Downloading update<span class=\\"dot\\">.</span><span class=\\"dot\\">.</span><span class=\\"dot\\">.</span>"'
+        // Static HTML — safe; the dots are decoration, not interpolated data.
+        setSplashText(
+          splash,
+          'status',
+          'Downloading update<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>',
+          true
         )
       }
     }
     const setSplashUpToDate = (): void => {
-      if (splashAlive) {
-        splash.webContents.executeJavaScript(
-          'document.getElementById("status").innerText = "Up to date!"'
-        )
-      }
+      if (splashAlive) setSplashText(splash, 'status', 'Up to date!')
     }
     const setSplashFallback = (): void => {
-      if (splashAlive) {
-        splash.webContents.executeJavaScript(
-          'document.getElementById("status").innerText = "Starting..."'
-        )
-      }
+      if (splashAlive) setSplashText(splash, 'status', 'Starting...')
     }
 
     if (isMac) {
@@ -247,7 +321,7 @@ app.whenReady().then(async () => {
               console.error('Mac update re-check failed:', err)
             }
           }
-          setInterval(recheckMac, 30 * 60 * 1000)
+          scheduleJittered(recheckMac, 30 * 60 * 1000)
         } else {
           autoUpdater.removeAllListeners('update-downloaded')
           autoUpdater.on('update-downloaded', (info) => {
@@ -255,7 +329,7 @@ app.whenReady().then(async () => {
             mainWindow.webContents.send('update:downloaded', { version: info.version })
           })
           autoUpdater.checkForUpdates().catch((err) => console.error('Update check failed:', err))
-          setInterval(() => autoUpdater.checkForUpdates().catch((err) => console.error('Update re-check failed:', err)), 30 * 60 * 1000)
+          scheduleJittered(() => autoUpdater.checkForUpdates().catch((err) => console.error('Update re-check failed:', err)), 30 * 60 * 1000)
         }
       }
     }, remaining)

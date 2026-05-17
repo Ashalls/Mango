@@ -2,8 +2,30 @@ import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import { serializeDocuments } from '../services/serialize'
 import * as queryLog from '../services/queryLog'
-import { MAX_RESULT_SIZE } from '@shared/constants'
+import { MAX_RESULT_SIZE, MAX_REGEX_PATTERN_LENGTH, REGEX_QUANTIFIER_DEPTH_LIMIT } from '@shared/constants'
 import type { QueryOptions, QueryResult } from '@shared/types'
+
+/**
+ * Reject patterns that are likely to ReDoS the Node process or the MongoDB
+ * server. Cheap structural checks — not a substitute for a real safe-regex,
+ * but good enough to block obvious nested-quantifier attacks.
+ */
+function assertSafeRegex(pattern: string): void {
+  if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
+    throw new Error(`Regex pattern exceeds maximum length (${MAX_REGEX_PATTERN_LENGTH})`)
+  }
+  // Count nested unbounded quantifiers — (a+)+, (a*)*, etc.
+  const nested = pattern.match(/\([^()]*[+*][^()]*\)\s*[+*]/g)
+  if (nested && nested.length >= REGEX_QUANTIFIER_DEPTH_LIMIT) {
+    throw new Error('Regex pattern rejected: nested unbounded quantifiers (ReDoS risk)')
+  }
+  // Validate it compiles at all
+  try {
+    new RegExp(pattern)
+  } catch (e) {
+    throw new Error(`Invalid regex pattern: ${(e as Error).message}`)
+  }
+}
 
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
 function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
@@ -42,7 +64,7 @@ export async function find(options: QueryOptions): Promise<QueryResult> {
       cursor = cursor.project(options.projection)
     }
     if (options.sort) {
-      cursor = cursor.sort(options.sort)
+      cursor = cursor.sort(options.sort as Record<string, 1 | -1>)
     }
 
     cursor = cursor.skip(skip).limit(limit)
@@ -188,6 +210,7 @@ export async function valueSearch(
 
     const regexFlags = options.caseInsensitive ? 'i' : ''
     const pattern = options.regex ? searchTerm : searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (options.regex) assertSafeRegex(pattern)
 
     const orConditions = Array.from(stringFields).map((field) => ({
       [field]: { $regex: pattern, $options: regexFlags }

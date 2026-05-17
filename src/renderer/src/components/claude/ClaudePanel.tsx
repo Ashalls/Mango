@@ -245,11 +245,20 @@ export function ClaudePanel() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-sidebar-border p-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Claude</span>
+      <div className="flex items-center justify-between gap-2 border-b border-sidebar-border p-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 text-sm font-medium">Claude</span>
           {tab && (
-            <span className="text-[10px] text-muted-foreground">
+            <span
+              className="truncate text-[10px] text-muted-foreground"
+              title={
+                tab.scope === 'connection'
+                  ? 'Connection'
+                  : tab.scope === 'database'
+                    ? tab.database
+                    : `${tab.database}.${tab.collection}`
+              }
+            >
               {tab.scope === 'connection'
                 ? 'Connection'
                 : tab.scope === 'database'
@@ -258,13 +267,13 @@ export function ClaudePanel() {
             </span>
           )}
           {isStreaming && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
               thinking...
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <Button
             variant="ghost"
             size="sm"

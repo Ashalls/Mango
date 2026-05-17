@@ -88,4 +88,41 @@ export const adminRouter = router({
     .query(async ({ input }) => {
       return adminActions.getIndexStats(input.database, input.collection)
     }),
+
+  getValidator: procedure
+    .input(z.object({ database: z.string(), collection: z.string() }))
+    .query(async ({ input }) => {
+      return adminActions.getValidator(input.database, input.collection)
+    }),
+
+  setValidator: procedure
+    .input(z.object({
+      database: z.string(),
+      collection: z.string(),
+      validator: z.record(z.unknown()).nullable(),
+      validationLevel: z.enum(['off', 'strict', 'moderate']).default('strict'),
+      validationAction: z.enum(['error', 'warn']).default('error')
+    }))
+    .mutation(async ({ input }) => {
+      const blocked = connectionActions.checkReadOnly()
+      if (blocked) throw new Error(blocked)
+      await adminActions.setValidator(
+        input.database, input.collection, input.validator,
+        input.validationLevel, input.validationAction
+      )
+      return { applied: true }
+    }),
+
+  validateSample: procedure
+    .input(z.object({
+      database: z.string(),
+      collection: z.string(),
+      validator: z.record(z.unknown()),
+      sampleSize: z.number().int().positive().max(2000).default(200)
+    }))
+    .mutation(async ({ input }) => {
+      return adminActions.validateSample(
+        input.database, input.collection, input.validator, input.sampleSize
+      )
+    }),
 })

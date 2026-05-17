@@ -6,6 +6,7 @@ import { DocumentTable } from './DocumentTable'
 import { BulkToolbar } from './BulkToolbar'
 import { DocumentEditor } from './DocumentEditor'
 import { IndexPanel } from '@renderer/components/indexes/IndexPanel'
+import { ValidationPanel } from '@renderer/components/validation/ValidationPanel'
 import { AggregationEditor } from '@renderer/components/aggregation/AggregationEditor'
 import { VisualExplain } from '@renderer/components/explain/VisualExplain'
 import { QueryProfiler } from '@renderer/components/profiler/QueryProfiler'
@@ -15,7 +16,7 @@ import type { ExplainPlan } from '@shared/types'
 
 export function MainPanel() {
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
-  const [subTab, setSubTab] = useState<'documents' | 'aggregation' | 'explain' | 'indexes'>('documents')
+  const [subTab, setSubTab] = useState<'documents' | 'aggregation' | 'explain' | 'indexes' | 'validation'>('documents')
   const [viewMode, setViewMode] = useState<'table' | 'tree' | 'json'>('table')
   const [explainPlan, setExplainPlan] = useState<ExplainPlan | null>(null)
 
@@ -107,6 +108,19 @@ export function MainPanel() {
                     <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400" />
                   )}
                 </button>
+                <button
+                  className={`relative px-3 py-1 text-xs font-medium transition-colors ${
+                    subTab === 'validation'
+                      ? 'text-emerald-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setSubTab('validation')}
+                >
+                  Validation
+                  {subTab === 'validation' && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400" />
+                  )}
+                </button>
 
               </div>
 
@@ -144,9 +158,13 @@ export function MainPanel() {
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : subTab === 'indexes' ? (
                 <div className="flex-1 overflow-auto">
                   <IndexPanel />
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0">
+                  <ValidationPanel />
                 </div>
               )}
             </>

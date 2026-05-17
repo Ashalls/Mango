@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,6 +12,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -23,18 +25,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build app
-        run: npm run build
+        run: pnpm run build
 
-      - name: Build ${{ matrix.platform }} distributables
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+      # Mango ships unsigned on both platforms (see docs/RELEASING.md).
+      # When you obtain a code-signing cert, add the secrets and the
+      # electron-builder.yml entries documented there; this step will then
+      # automatically sign without further changes.
+      - name: Build Windows distributables
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win --publish never
+
+      - name: Build macOS distributables
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac --publish never
+
+      # Read by src/main/services/macUpdater.ts to verify the downloaded DMG
+      # before opening it. The updater treats this as best-effort: if absent
+      # it warns and proceeds, if present and mismatched it refuses to install.
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd dist
+          for f in *.exe *.dmg *.zip; do
+            if [ -f "$f" ]; then
+              if command -v sha256sum >/dev/null; then
+                sha256sum "$f" >> SHA256SUMS
+              else
+                shasum -a 256 "$f" >> SHA256SUMS
+              fi
+            fi
+          done
+          if [ -f SHA256SUMS ]; then cat SHA256SUMS; fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -49,6 +83,7 @@ jobs:
             dist/*.zip.blockmap
             dist/latest.yml
             dist/latest-mac.yml
+            dist/SHA256SUMS
           if-no-files-found: error
 
   release:
@@ -62,8 +97,15 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: List artifacts
-        run: ls -la dist/
+      # Merge per-OS SHA256SUMS into a single file before publishing.
+      - name: Merge SHA256SUMS
+        run: |
+          set -e
+          if compgen -G "dist/SHA256SUMS*" >/dev/null; then
+            cat dist/SHA256SUMS* | sort -u > dist/SHA256SUMS.merged
+            mv dist/SHA256SUMS.merged dist/SHA256SUMS
+            cat dist/SHA256SUMS
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

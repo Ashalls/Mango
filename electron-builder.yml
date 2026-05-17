@@ -31,6 +31,12 @@ win:
   executableName: Mango
   target:
     - nsis
+  # Code signing is disabled — Mango ships unsigned. When you obtain an EV
+  # or OV cert, flip signAndEditExecutable to true and populate the
+  # CSC_LINK / CSC_KEY_PASSWORD secrets in the release workflow. Until
+  # then, Windows SmartScreen will show an "unrecognized app" warning on
+  # first install, which is normal for unsigned NSIS installers.
+  signAndEditExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -40,8 +46,16 @@ nsis:
 mac:
   icon: resources/icon.png
   category: public.app-category.developer-tools
+  # No Apple Developer ID / notarization: ship unsigned. Gatekeeper will
+  # refuse the app on first launch — users must right-click → Open, or
+  # remove the quarantine attribute (`xattr -dr com.apple.quarantine Mango.app`).
+  # When you join the Apple Developer Program, flip hardenedRuntime and
+  # notarize to true and set the entitlements file path (the file is
+  # already provided at resources/entitlements.mac.plist for that future
+  # transition).
   hardenedRuntime: false
   gatekeeperAssess: false
+  notarize: false
   target:
     - dmg
     - zip

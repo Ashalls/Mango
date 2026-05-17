@@ -1,3 +1,9 @@
 {
-  "sessions": []
+  "sessions": [
+    {
+      "sessionId": "cca6ffdc-d8a7-4eb5-96bb-622daa3ad826",
+      "title": "pull on the repo. Do a security audit...",
+      "endpointId": null
+    }
+  ]
 }
