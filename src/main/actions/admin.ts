@@ -1,3 +1,4 @@
+import type { IndexSpecification } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 
 export async function dropDatabase(database: string): Promise<void> {
@@ -36,7 +37,7 @@ export async function createIndex(
   } = {}
 ): Promise<string> {
   const db = mongoService.getDb(database)
-  return db.collection(collection).createIndex(fields, options)
+  return db.collection(collection).createIndex(fields as IndexSpecification, options)
 }
 
 export async function dropIndex(

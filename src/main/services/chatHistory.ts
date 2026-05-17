@@ -12,7 +12,7 @@ interface ChatMessage {
   timestamp: number
 }
 
-interface ChatSession {
+export interface ChatSession {
   id: string
   tabId: string
   messages: ChatMessage[]

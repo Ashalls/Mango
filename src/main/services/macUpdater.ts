@@ -1,23 +1,29 @@
 import { app, shell, dialog, BrowserWindow } from 'electron'
-import { createWriteStream, existsSync, statSync, unlinkSync } from 'fs'
+import { createWriteStream, existsSync, statSync, unlinkSync, readFileSync } from 'fs'
+import { createHash } from 'crypto'
 import { join } from 'path'
+import { z } from 'zod'
 
 const RELEASES_URL = 'https://api.github.com/repos/Ashalls/Mango/releases/latest'
 
-interface GitHubAsset {
-  name: string
-  browser_download_url: string
-  size: number
-}
+const GitHubAssetSchema = z.object({
+  name: z.string(),
+  browser_download_url: z.string().url(),
+  size: z.number().nonnegative()
+})
 
-interface GitHubRelease {
-  tag_name: string
-  assets: GitHubAsset[]
-}
+const GitHubReleaseSchema = z.object({
+  tag_name: z.string(),
+  assets: z.array(GitHubAssetSchema)
+})
+
+type GitHubAsset = z.infer<typeof GitHubAssetSchema>
+type GitHubRelease = z.infer<typeof GitHubReleaseSchema>
 
 export interface MacUpdateInfo {
   version: string
   asset: GitHubAsset
+  release: GitHubRelease
 }
 
 let downloadedDmgPath: string | null = null
@@ -50,7 +56,41 @@ async function fetchLatestRelease(): Promise<GitHubRelease> {
     }
   })
   if (!res.ok) throw new Error(`GitHub API returned ${res.status}`)
-  return (await res.json()) as GitHubRelease
+  const json = await res.json()
+  const parsed = GitHubReleaseSchema.safeParse(json)
+  if (!parsed.success) {
+    throw new Error('Malformed GitHub release payload: ' + parsed.error.message)
+  }
+  return parsed.data
+}
+
+/**
+ * Verify the downloaded DMG against the published SHA256SUMS asset. We refuse
+ * to install if the checksum file is missing or if the hash doesn't match.
+ *
+ * NOTE: this is checksum-verification only. Without code signing (see
+ * security-scan/plan.md C1) an attacker who can publish a release can also
+ * publish a matching SHA256SUMS. Pair this with a published signature when
+ * code signing is wired.
+ */
+async function verifyChecksum(dmgPath: string, asset: GitHubAsset, release: GitHubRelease): Promise<void> {
+  const sumsAsset = release.assets.find((a) => /SHA256SUMS|\.sha256$/i.test(a.name))
+  if (!sumsAsset) {
+    throw new Error('Release has no SHA256SUMS asset — refusing to install unverified DMG')
+  }
+  const res = await fetch(sumsAsset.browser_download_url, { headers: { 'User-Agent': 'Mango-Updater' } })
+  if (!res.ok) throw new Error(`Checksum file fetch failed: ${res.status}`)
+  const sums = await res.text()
+  const expected = sums
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.toLowerCase().endsWith(asset.name.toLowerCase()))
+    .map((l) => l.split(/\s+/)[0])[0]
+  if (!expected) throw new Error(`No checksum entry for ${asset.name} in SHA256SUMS`)
+  const hash = createHash('sha256').update(readFileSync(dmgPath)).digest('hex')
+  if (hash.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`Checksum mismatch for ${asset.name}: got ${hash}, expected ${expected}`)
+  }
 }
 
 export async function checkForUpdate(): Promise<MacUpdateInfo | null> {
@@ -58,7 +98,7 @@ export async function checkForUpdate(): Promise<MacUpdateInfo | null> {
   if (compareSemver(release.tag_name, app.getVersion()) <= 0) return null
   const asset = pickDmgAsset(release.assets)
   if (!asset) return null
-  return { version: release.tag_name.replace(/^v/, ''), asset }
+  return { version: release.tag_name.replace(/^v/, ''), asset, release }
 }
 
 async function downloadDmg(
@@ -120,7 +160,17 @@ export async function downloadUpdate(
   if (downloadedDmgPath && existsSync(downloadedDmgPath)) return downloadedDmgPath
   if (downloadInFlight) return downloadInFlight
   downloadInFlight = downloadDmg(info.asset, onProgress)
-    .then((path) => {
+    .then(async (path) => {
+      // Refuse to keep an unverified DMG. If the release publisher hasn't
+      // supplied a SHA256SUMS file we delete the download and surface the
+      // error — the user can still install manually from the GitHub release
+      // page if they're certain.
+      try {
+        await verifyChecksum(path, info.asset, info.release)
+      } catch (err) {
+        if (existsSync(path)) unlinkSync(path)
+        throw err
+      }
       downloadedDmgPath = path
       return path
     })

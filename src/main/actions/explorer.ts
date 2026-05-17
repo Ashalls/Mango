@@ -34,13 +34,16 @@ export async function listCollections(database: string, connectionId?: string): 
   const db = mongoService.getDb(database, connectionId)
   const collections = await db.listCollections().toArray()
 
-  return collections.map((col) => ({
-    name: col.name,
-    type: col.type || 'collection',
-    documentCount: undefined,
-    viewOn: col.options?.viewOn,
-    pipeline: col.options?.pipeline
-  }))
+  return collections.map((col) => {
+    const opts = (col as { options?: { viewOn?: string; pipeline?: Record<string, unknown>[] } }).options
+    return {
+      name: col.name,
+      type: col.type || 'collection',
+      documentCount: undefined,
+      viewOn: opts?.viewOn,
+      pipeline: opts?.pipeline
+    }
+  })
 }
 
 export async function collectionSchema(

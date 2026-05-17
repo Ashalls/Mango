@@ -6,6 +6,7 @@ import { DEFAULT_MCP_PORT } from '@shared/constants'
 import * as configService from './config'
 import * as mongoService from './mongodb'
 import { scanCodebase, formatContext } from './codebaseContext'
+import { getMcpToken } from '../mcp/server'
 
 /**
  * In packaged builds the SDK's cli.js is inside app.asar.unpacked so that
@@ -191,6 +192,7 @@ export async function sendMessage(
 
   emitToRenderer('claude:stream-start', { messageId })
 
+  let fullText = ''
   try {
     const q = claudeQuery({
       prompt: message,
@@ -203,7 +205,7 @@ export async function sendMessage(
         mcpServers: {
           mango: {
             type: 'http',
-            url: `http://127.0.0.1:${mcpPort}/mcp`
+            url: `http://127.0.0.1:${mcpPort}/mcp?token=${encodeURIComponent(getMcpToken())}`
           }
         },
         allowedTools: [
@@ -240,7 +242,6 @@ export async function sendMessage(
       }
     })
 
-    let fullText = ''
     let currentTurnText = ''
     let previousTurnsText = ''
     const seenToolCalls = new Set<string>()
@@ -331,8 +332,11 @@ export async function sendMessage(
           })
         }
       } else if (msg.type === 'result') {
-        // Use result text if we didn't get any assistant text
-        const finalText = fullText || msg.result || ''
+        // Use result text if we didn't get any assistant text. The SDK only
+        // exposes .result on the success subtype; error subtypes have no
+        // payload to fall back on.
+        const resultText = 'result' in msg ? (msg as { result?: string }).result ?? '' : ''
+        const finalText = fullText || resultText
         emitToRenderer('claude:stream-end', {
           messageId,
           text: finalText,

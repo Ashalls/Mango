@@ -539,8 +539,10 @@ async function runImportWorker(
     )
     totalDocs += copied
 
-    // Check if cancelled
-    if (colProgress.status === 'error' && colProgress.error === 'Cancelled') break
+    // Check if cancelled — colProgress.status is mutated by the child message
+    // handler so TS's narrowing here is wrong.
+    const cp = colProgress as { status: string; error?: string }
+    if (cp.status === 'error' && cp.error === 'Cancelled') break
   }
 
   // Handle views (small, can run on main thread)
