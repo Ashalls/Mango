@@ -1,3 +1,11 @@
+# Declaring this as a single-package workspace is what pnpm 9+ requires —
+# without `packages`, `pnpm store path` errors with "packages field missing
+# or empty", which silently broke setup-node's pnpm cache step (and the
+# whole release workflow for v0.6.7 and v0.6.8). See PR #494b223 for the
+# root-cause investigation.
+packages:
+  - .
+
 allowBuilds:
   electron: false
   esbuild: false
