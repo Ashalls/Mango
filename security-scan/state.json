@@ -3,7 +3,8 @@
     "started": "2026-05-17",
     "version": "0.6.7",
     "commit": "fa5aee9",
-    "mode": "audit-only"
+    "branch": "security-and-features-pass",
+    "mode": "implement-and-document"
   },
   "summary": {
     "critical": 3,
@@ -12,13 +13,27 @@
     "low": 3,
     "info": 2
   },
-  "fixed": [],
-  "pending": [
-    "C1", "C2", "C3",
-    "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9",
-    "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8",
-    "L1", "L2", "L3",
-    "I1", "I2"
+  "fixed": [
+    "C1-scaffold",
+    "C2",
+    "C3-prompt-only",
+    "H3", "H4", "H6", "H7", "H8", "H9",
+    "M1", "M2", "M5", "M7", "M8",
+    "L1", "L3"
   ],
-  "next": "C1 (unsigned auto-updater)"
+  "pending": [
+    "C1-certs",
+    "C3-confirmation-gate",
+    "H1", "H2", "H5",
+    "M3", "M4", "M6",
+    "L2",
+    "I1"
+  ],
+  "features_done": ["F4", "F19", "F23"],
+  "features_pending": [
+    "F1", "F2", "F3", "F5", "F6", "F7", "F8", "F9", "F10",
+    "F11", "F12", "F13", "F14", "F15", "F16", "F17",
+    "F20", "F21", "F22", "F24"
+  ],
+  "next": "See security-scan/REMAINING-WORK.md for prioritized roadmap"
 }
