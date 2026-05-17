@@ -31,17 +31,39 @@ win:
   executableName: Mango
   target:
     - nsis
+  # Code signing — these env vars are populated by the GitHub Action.
+  # CSC_LINK: base64-encoded .pfx file (`base64 -w 0 cert.pfx | gh secret set CSC_LINK`)
+  # CSC_KEY_PASSWORD: the .pfx password
+  # If neither is set, electron-builder produces an unsigned installer
+  # (useful for local dev) — see signAndEditExecutable below.
+  signAndEditExecutable: true
+  # signingHashAlgorithms picked at runtime via env: SIGNING_HASH_ALGORITHMS
+  signingHashAlgorithms:
+    - sha256
+  # rfc3161TimeStampServer is needed so the signature stays verifiable
+  # after the cert expires. Most certificate vendors provide one.
+  rfc3161TimeStampServer: http://timestamp.digicert.com
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: Mango-${version}-setup.${ext}
   shortcutName: Mango
   uninstallDisplayName: Mango
+  # publisherName must match the Subject CN on the signing cert, otherwise
+  # Windows SmartScreen will flag the installer as untrusted.
+  # publisherName: "YOUR ORGANISATION LTD"
 mac:
   icon: resources/icon.png
   category: public.app-category.developer-tools
-  hardenedRuntime: false
-  gatekeeperAssess: false
+  # Hardened runtime + notarization required for Gatekeeper acceptance on
+  # macOS 10.15+. Leaves these disabled is what made the previous build
+  # un-notarized. When CSC_LINK / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD /
+  # APPLE_TEAM_ID are set, electron-builder signs and notarizes.
+  hardenedRuntime: true
+  gatekeeperAssess: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  notarize: true
   target:
     - dmg
     - zip

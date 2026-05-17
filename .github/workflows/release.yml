@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,6 +12,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -23,18 +25,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build app
-        run: npm run build
+        run: pnpm run build
 
-      - name: Build ${{ matrix.platform }} distributables
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+      # Windows code signing (optional — falls back to unsigned if missing).
+      # Configure secrets per docs/RELEASING.md:
+      #   WIN_CSC_LINK            base64-encoded .pfx
+      #   WIN_CSC_KEY_PASSWORD    .pfx password
+      - name: Build Windows distributables
+        if: matrix.platform == 'win'
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --publish never
+
+      # macOS signing + notarization (optional — falls back to unsigned).
+      # Configure secrets per docs/RELEASING.md:
+      #   MAC_CSC_LINK                  base64-encoded Developer ID .p12
+      #   MAC_CSC_KEY_PASSWORD          .p12 password
+      #   APPLE_ID                      notarization Apple ID
+      #   APPLE_APP_SPECIFIC_PASSWORD   app-specific password
+      #   APPLE_TEAM_ID                 10-char team ID
+      - name: Build macOS distributables
+        if: matrix.platform == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac --publish never
+
+      # Required by macUpdater.ts checksum verification (post-Batch B).
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd dist
+          for f in *.exe *.dmg *.zip; do
+            if [ -f "$f" ]; then
+              if command -v sha256sum >/dev/null; then
+                sha256sum "$f" >> SHA256SUMS
+              else
+                shasum -a 256 "$f" >> SHA256SUMS
+              fi
+            fi
+          done
+          if [ -f SHA256SUMS ]; then cat SHA256SUMS; fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -49,6 +97,7 @@ jobs:
             dist/*.zip.blockmap
             dist/latest.yml
             dist/latest-mac.yml
+            dist/SHA256SUMS
           if-no-files-found: error
 
   release:
@@ -62,8 +111,15 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: List artifacts
-        run: ls -la dist/
+      # Merge per-OS SHA256SUMS into a single file before publishing.
+      - name: Merge SHA256SUMS
+        run: |
+          set -e
+          if compgen -G "dist/SHA256SUMS*" >/dev/null; then
+            cat dist/SHA256SUMS* | sort -u > dist/SHA256SUMS.merged
+            mv dist/SHA256SUMS.merged dist/SHA256SUMS
+            cat dist/SHA256SUMS
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
