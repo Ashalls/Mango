@@ -32,11 +32,17 @@ win:
   target:
     - nsis
   # Code signing is disabled — Mango ships unsigned. When you obtain an EV
-  # or OV cert, flip signAndEditExecutable to true and populate the
-  # CSC_LINK / CSC_KEY_PASSWORD secrets in the release workflow. Until
-  # then, Windows SmartScreen will show an "unrecognized app" warning on
-  # first install, which is normal for unsigned NSIS installers.
-  signAndEditExecutable: false
+  # or OV cert, populate the CSC_LINK / CSC_KEY_PASSWORD secrets in the
+  # release workflow. Until then, Windows SmartScreen will show an
+  # "unrecognized app" warning on first install, which is normal for
+  # unsigned NSIS installers.
+  #
+  # signAndEditExecutable stays true (the default) so rcedit can still
+  # bake the app icon, product name, and version info into Mango.exe.
+  # Without it, the installed exe falls back to the generic Electron
+  # icon on the taskbar / Start menu / Explorer. When no CSC_LINK is
+  # set electron-builder skips the actual signing step.
+  signAndEditExecutable: true
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
