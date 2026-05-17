@@ -1,13 +1,12 @@
-import { exec } from 'child_process'
+import { spawn } from 'child_process'
 import { writeFileSync, readdirSync, existsSync } from 'fs'
 import { join } from 'path'
+import { randomBytes } from 'crypto'
 import { app } from 'electron'
 import * as configService from '../services/config'
 
 /**
  * Discover mongosh install directories on Windows.
- * Checks common locations including version-specific standalone installs
- * (e.g. "C:\Program Files (x86)\mongosh-2.8.1-win32-x64\bin").
  */
 function findMongoshPaths(): string[] {
   const extra: string[] = []
@@ -21,7 +20,6 @@ function findMongoshPaths(): string[] {
     'C:\\Program Files\\MongoDB\\Server\\6.0\\bin'
   ].filter(Boolean)
 
-  // Scan Program Files directories for mongosh-* standalone installs
   for (const pf of ['C:\\Program Files', 'C:\\Program Files (x86)']) {
     try {
       if (!existsSync(pf)) continue
@@ -33,7 +31,7 @@ function findMongoshPaths(): string[] {
           }
         }
       }
-    } catch { /* ignore permission errors */ }
+    } catch { /* ignore */ }
   }
 
   for (const p of candidates) {
@@ -43,12 +41,34 @@ function findMongoshPaths(): string[] {
 }
 
 function buildUriWithDatabase(uri: string, database: string): string {
-  // Match: scheme + authority, then optional /database, then optional ?query
   const match = uri.match(/^(mongodb(?:\+srv)?:\/\/[^/]+)(\/[^?]*)?(\?.*)?$/)
   if (match) {
     return `${match[1]}/${encodeURIComponent(database)}${match[3] || ''}`
   }
   return uri
+}
+
+/**
+ * Generate a setup script for mongosh that pre-selects the collection.
+ * Written to a randomized path in userData (per-user, not /tmp) so other
+ * users / processes on the host can't race a malicious replacement.
+ */
+function writeSetupScript(database: string, collection: string): string {
+  const dir = join(app.getPath('userData'), 'mongosh')
+  if (!existsSync(dir)) {
+    require('fs').mkdirSync(dir, { recursive: true, mode: 0o700 })
+  }
+  const rand = randomBytes(8).toString('hex')
+  const setupPath = join(dir, `setup-${rand}.js`)
+  const setupCode = [
+    `const coll = db.getCollection(${JSON.stringify(collection)})`,
+    `print('')`,
+    `print(${JSON.stringify(`  Collection: ${database}.${collection}`)})`,
+    `print(${JSON.stringify(`  Access via: coll or db[${JSON.stringify(collection)}]`)})`,
+    `print('')`
+  ].join('\n')
+  writeFileSync(setupPath, setupCode, { mode: 0o600 })
+  return setupPath
 }
 
 export async function openMongosh(
@@ -66,101 +86,92 @@ export async function openMongosh(
   if (process.platform === 'win32') {
     await openMongoshWindows(uri, database, label, collection)
   } else if (process.platform === 'darwin') {
-    await openMongoshMac(uri, database, label, collection)
+    await openMongoshMac(uri, database, collection)
   } else {
-    await openMongoshLinux(uri, database, label, collection)
+    await openMongoshLinux(uri, database, collection)
   }
 }
 
+/**
+ * Windows: spawn cmd.exe with a `start` builtin so the new console window
+ * has its own lifetime. The URI and setup-path are passed as positional
+ * args (not interpolated into a string), so quotes/spaces in the URI cannot
+ * break out of the command line.
+ */
 async function openMongoshWindows(
   uri: string,
   database: string,
   label: string,
   collection?: string
 ): Promise<void> {
-  const batPath = join(app.getPath('temp'), `mango-mongosh-${Date.now()}.bat`)
-  // Discover actual mongosh install directories at launch time
   const extraPaths = findMongoshPaths()
-  const pathAugment = extraPaths.length > 0 ? ';' + extraPaths.join(';') : ''
-
-  const lines = [
-    '@echo off',
-    `title Mango mongosh: ${label}`,
-    `set "PATH=%PATH%${pathAugment}"`
-  ]
-
-  let mongoshCmd: string
-  if (collection) {
-    const setupPath = join(app.getPath('temp'), `mango-mongosh-setup-${Date.now()}.js`)
-    const setupCode = [
-      `const coll = db.getCollection(${JSON.stringify(collection)})`,
-      `print('')`,
-      `print('  Collection: ${database}.${collection}')`,
-      `print('  Access via: coll or db.${collection}')`,
-      `print('')`
-    ].join('\n')
-    writeFileSync(setupPath, setupCode)
-    mongoshCmd = `mongosh "${uri}" --file "${setupPath}" --shell --quiet`
-  } else {
-    mongoshCmd = `mongosh "${uri}" --quiet`
+  const env = { ...process.env }
+  if (extraPaths.length > 0) {
+    env.PATH = (env.PATH || '') + ';' + extraPaths.join(';')
   }
 
-  // Run mongosh; if it fails (not found / error), show install guidance
-  lines.push(
-    mongoshCmd,
-    'if errorlevel 1 (',
-    '  echo.',
-    '  echo   mongosh is not installed or not in your PATH.',
-    '  echo.',
-    '  echo   Install it from: https://www.mongodb.com/docs/mongodb-shell/install/',
-    '  echo.',
-    '  pause',
-    ')'
-  )
-
-  writeFileSync(batPath, lines.join('\r\n') + '\r\n')
-  exec(`start "" "${batPath}"`)
+  const args = ['/c', 'start', `Mango mongosh: ${label}`, 'cmd', '/k', 'mongosh', uri, '--quiet']
+  if (collection) {
+    const setupPath = writeSetupScript(database, collection)
+    args.push('--file', setupPath, '--shell')
+  }
+  spawn('cmd.exe', args, { env, detached: true, stdio: 'ignore' }).unref()
 }
 
+/**
+ * macOS: use the `open -a Terminal` helper with an argv-style command file.
+ * Avoids osascript string-escaping entirely.
+ */
 async function openMongoshMac(
   uri: string,
-  _database: string,
-  _label: string,
+  database: string,
   collection?: string
 ): Promise<void> {
-  const args = [`"${uri}"`, '--quiet']
-  if (collection) {
-    const setupPath = join(app.getPath('temp'), `mango-mongosh-setup-${Date.now()}.js`)
-    const setupCode = `const coll = db.getCollection(${JSON.stringify(collection)})`
-    writeFileSync(setupPath, setupCode)
-    args.push('--file', `"${setupPath}"`, '--shell')
-  }
-  const cmd = `mongosh ${args.join(' ')}`
-  exec(`osascript -e 'tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"'`)
+  const dir = join(app.getPath('userData'), 'mongosh')
+  if (!existsSync(dir)) require('fs').mkdirSync(dir, { recursive: true, mode: 0o700 })
+
+  const setupArg = collection ? `--file ${quoteShell(writeSetupScript(database, collection))} --shell` : ''
+  const cmdPath = join(dir, `launch-${randomBytes(8).toString('hex')}.command`)
+  const script = [
+    '#!/bin/bash',
+    `exec mongosh ${quoteShell(uri)} --quiet ${setupArg}`
+  ].join('\n')
+  writeFileSync(cmdPath, script, { mode: 0o700 })
+  spawn('open', ['-a', 'Terminal', cmdPath], { detached: true, stdio: 'ignore' }).unref()
 }
 
+/**
+ * Linux: try common terminal emulators with proper argv (no shell interpolation).
+ */
 async function openMongoshLinux(
   uri: string,
-  _database: string,
-  _label: string,
+  database: string,
   collection?: string
 ): Promise<void> {
-  const args = [`"${uri}"`, '--quiet']
+  const mongoshArgs = [uri, '--quiet']
   if (collection) {
-    const setupPath = join(app.getPath('temp'), `mango-mongosh-setup-${Date.now()}.js`)
-    const setupCode = `const coll = db.getCollection(${JSON.stringify(collection)})`
-    writeFileSync(setupPath, setupCode)
-    args.push('--file', `"${setupPath}"`, '--shell')
+    mongoshArgs.push('--file', writeSetupScript(database, collection), '--shell')
   }
-  const cmd = `mongosh ${args.join(' ')}`
-  // Try common terminal emulators
-  exec(`x-terminal-emulator -e '${cmd}'`, (err) => {
-    if (err) {
-      exec(`gnome-terminal -- bash -c '${cmd}; exec bash'`, (err2) => {
-        if (err2) {
-          exec(`xterm -e '${cmd}'`)
-        }
-      })
-    }
-  })
+
+  const terminals = [
+    { bin: 'x-terminal-emulator', args: ['-e', 'mongosh', ...mongoshArgs] },
+    { bin: 'gnome-terminal', args: ['--', 'mongosh', ...mongoshArgs] },
+    { bin: 'konsole', args: ['-e', 'mongosh', ...mongoshArgs] },
+    { bin: 'xterm', args: ['-e', 'mongosh', ...mongoshArgs] }
+  ]
+
+  for (const t of terminals) {
+    try {
+      const child = spawn(t.bin, t.args, { detached: true, stdio: 'ignore' })
+      child.on('error', () => { /* try next */ })
+      child.unref()
+      return
+    } catch { /* continue */ }
+  }
+  throw new Error('No supported terminal emulator found (tried x-terminal-emulator, gnome-terminal, konsole, xterm)')
+}
+
+/** POSIX single-quote escaping. */
+function quoteShell(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`
 }

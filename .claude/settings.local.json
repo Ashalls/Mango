@@ -35,7 +35,13 @@
       "Bash(npm run:*)",
       "Bash(npm version:*)",
       "Bash(npx electron-builder:*)",
-      "Bash(gh release:*)"
+      "Bash(gh release:*)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git tag *)",
+      "Bash(git push *)",
+      "Bash(gh run *)"
     ]
   }
 }

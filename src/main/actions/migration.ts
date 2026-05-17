@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { fork, ChildProcess } from 'child_process'
-import { writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { writeFileSync, mkdirSync } from 'fs'
+import { randomBytes } from 'crypto'
 import { join as pathJoin } from 'path'
 import * as mongoService from '../services/mongodb'
 import * as configService from '../services/config'
@@ -30,13 +30,15 @@ export function cancelOperation(opId: string): boolean {
   return false
 }
 
-// Single-collection copy worker script
-const COPY_SCRIPT_PATH = pathJoin(tmpdir(), 'mango-copy-worker.js')
+// Single-collection copy worker script — randomized per-user path, 0600 mode
+const MIG_WORKER_DIR = pathJoin(app.getPath('userData'), 'workers')
+try { mkdirSync(MIG_WORKER_DIR, { recursive: true, mode: 0o700 }) } catch { /* exists */ }
+const COPY_SCRIPT_PATH = pathJoin(MIG_WORKER_DIR, `copy-worker-${randomBytes(8).toString('hex')}.js`)
 const COPY_WORKER_SCRIPT = `
 try {
 const { MongoClient } = require('mongodb');
 const send = (msg) => process.send(msg);
-const config = JSON.parse(process.argv[2]);
+const config = JSON.parse(process.env.MANGO_WORKER_CONFIG || '{}');
 
 async function run() {
   const { sourceUri, targetUri, sourceDatabase, targetDatabase, sourceColName, targetColName, dropTarget } = config;
@@ -102,7 +104,7 @@ run();
 `
 
 // Write script on startup
-try { writeFileSync(COPY_SCRIPT_PATH, COPY_WORKER_SCRIPT) } catch {}
+try { writeFileSync(COPY_SCRIPT_PATH, COPY_WORKER_SCRIPT, { mode: 0o600 }) } catch {}
 
 function copyCollectionInProcess(
   sourceUri: string,
@@ -116,12 +118,15 @@ function copyCollectionInProcess(
   op: OperationProgress
 ): Promise<number> {
   return new Promise((resolve) => {
-    const child = fork(COPY_SCRIPT_PATH, [
-      JSON.stringify({ sourceUri, targetUri, sourceDatabase, targetDatabase, sourceColName, targetColName, dropTarget })
-    ], {
+    const child = fork(COPY_SCRIPT_PATH, [], {
       execArgv: ['--max-old-space-size=4096'],
       silent: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter) }
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        NODE_PATH: [pathJoin(app.getAppPath(), 'node_modules'), pathJoin(process.cwd(), 'node_modules')].join(require('path').delimiter),
+        MANGO_WORKER_CONFIG: JSON.stringify({ sourceUri, targetUri, sourceDatabase, targetDatabase, sourceColName, targetColName, dropTarget })
+      }
     })
 
     activeProcesses.set(op.id, child)
