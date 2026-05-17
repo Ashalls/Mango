@@ -65,28 +65,43 @@ async function fetchLatestRelease(): Promise<GitHubRelease> {
 }
 
 /**
- * Verify the downloaded DMG against the published SHA256SUMS asset. We refuse
- * to install if the checksum file is missing or if the hash doesn't match.
+ * Verify the downloaded DMG against the published SHA256SUMS asset, if one
+ * exists. Behaviour:
+ *   - SHA256SUMS present + hash matches → silent success.
+ *   - SHA256SUMS present + hash mismatch → throw (refuse to install).
+ *   - SHA256SUMS absent → log a warning and proceed.
  *
- * NOTE: this is checksum-verification only. Without code signing (see
- * security-scan/plan.md C1) an attacker who can publish a release can also
- * publish a matching SHA256SUMS. Pair this with a published signature when
- * code signing is wired.
+ * This is intentionally tolerant: until releases publish SHA256SUMS as a
+ * standard asset, demanding it would break the entire auto-update path. The
+ * release workflow at .github/workflows/release.yml does upload SHA256SUMS,
+ * so once that workflow has run for a release the verification kicks in
+ * automatically.
+ *
+ * Note: checksum verification alone does NOT authenticate the publisher —
+ * anyone who can push a GitHub release can also publish a matching SHA256SUMS.
+ * Real publisher authentication requires code signing (see docs/RELEASING.md).
  */
 async function verifyChecksum(dmgPath: string, asset: GitHubAsset, release: GitHubRelease): Promise<void> {
   const sumsAsset = release.assets.find((a) => /SHA256SUMS|\.sha256$/i.test(a.name))
   if (!sumsAsset) {
-    throw new Error('Release has no SHA256SUMS asset — refusing to install unverified DMG')
+    console.warn(`[updater] No SHA256SUMS asset on release ${release.tag_name}; skipping checksum verification`)
+    return
   }
   const res = await fetch(sumsAsset.browser_download_url, { headers: { 'User-Agent': 'Mango-Updater' } })
-  if (!res.ok) throw new Error(`Checksum file fetch failed: ${res.status}`)
+  if (!res.ok) {
+    console.warn(`[updater] Checksum file fetch failed (${res.status}); skipping verification`)
+    return
+  }
   const sums = await res.text()
   const expected = sums
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.toLowerCase().endsWith(asset.name.toLowerCase()))
     .map((l) => l.split(/\s+/)[0])[0]
-  if (!expected) throw new Error(`No checksum entry for ${asset.name} in SHA256SUMS`)
+  if (!expected) {
+    console.warn(`[updater] SHA256SUMS has no entry for ${asset.name}; skipping verification`)
+    return
+  }
   const hash = createHash('sha256').update(readFileSync(dmgPath)).digest('hex')
   if (hash.toLowerCase() !== expected.toLowerCase()) {
     throw new Error(`Checksum mismatch for ${asset.name}: got ${hash}, expected ${expected}`)

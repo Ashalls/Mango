@@ -31,39 +31,31 @@ win:
   executableName: Mango
   target:
     - nsis
-  # Code signing — these env vars are populated by the GitHub Action.
-  # CSC_LINK: base64-encoded .pfx file (`base64 -w 0 cert.pfx | gh secret set CSC_LINK`)
-  # CSC_KEY_PASSWORD: the .pfx password
-  # If neither is set, electron-builder produces an unsigned installer
-  # (useful for local dev) — see signAndEditExecutable below.
-  signAndEditExecutable: true
-  # signingHashAlgorithms picked at runtime via env: SIGNING_HASH_ALGORITHMS
-  signingHashAlgorithms:
-    - sha256
-  # rfc3161TimeStampServer is needed so the signature stays verifiable
-  # after the cert expires. Most certificate vendors provide one.
-  rfc3161TimeStampServer: http://timestamp.digicert.com
+  # Code signing is disabled — Mango ships unsigned. When you obtain an EV
+  # or OV cert, flip signAndEditExecutable to true and populate the
+  # CSC_LINK / CSC_KEY_PASSWORD secrets in the release workflow. Until
+  # then, Windows SmartScreen will show an "unrecognized app" warning on
+  # first install, which is normal for unsigned NSIS installers.
+  signAndEditExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: Mango-${version}-setup.${ext}
   shortcutName: Mango
   uninstallDisplayName: Mango
-  # publisherName must match the Subject CN on the signing cert, otherwise
-  # Windows SmartScreen will flag the installer as untrusted.
-  # publisherName: "YOUR ORGANISATION LTD"
 mac:
   icon: resources/icon.png
   category: public.app-category.developer-tools
-  # Hardened runtime + notarization required for Gatekeeper acceptance on
-  # macOS 10.15+. Leaves these disabled is what made the previous build
-  # un-notarized. When CSC_LINK / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD /
-  # APPLE_TEAM_ID are set, electron-builder signs and notarizes.
-  hardenedRuntime: true
-  gatekeeperAssess: true
-  entitlements: resources/entitlements.mac.plist
-  entitlementsInherit: resources/entitlements.mac.plist
-  notarize: true
+  # No Apple Developer ID / notarization: ship unsigned. Gatekeeper will
+  # refuse the app on first launch — users must right-click → Open, or
+  # remove the quarantine attribute (`xattr -dr com.apple.quarantine Mango.app`).
+  # When you join the Apple Developer Program, flip hardenedRuntime and
+  # notarize to true and set the entitlements file path (the file is
+  # already provided at resources/entitlements.mac.plist for that future
+  # transition).
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  notarize: false
   target:
     - dmg
     - zip

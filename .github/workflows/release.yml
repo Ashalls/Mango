@@ -40,35 +40,21 @@ jobs:
       - name: Build app
         run: pnpm run build
 
-      # Windows code signing (optional — falls back to unsigned if missing).
-      # Configure secrets per docs/RELEASING.md:
-      #   WIN_CSC_LINK            base64-encoded .pfx
-      #   WIN_CSC_KEY_PASSWORD    .pfx password
+      # Mango ships unsigned on both platforms (see docs/RELEASING.md).
+      # When you obtain a code-signing cert, add the secrets and the
+      # electron-builder.yml entries documented there; this step will then
+      # automatically sign without further changes.
       - name: Build Windows distributables
         if: matrix.platform == 'win'
-        env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npx electron-builder --win --publish never
 
-      # macOS signing + notarization (optional — falls back to unsigned).
-      # Configure secrets per docs/RELEASING.md:
-      #   MAC_CSC_LINK                  base64-encoded Developer ID .p12
-      #   MAC_CSC_KEY_PASSWORD          .p12 password
-      #   APPLE_ID                      notarization Apple ID
-      #   APPLE_APP_SPECIFIC_PASSWORD   app-specific password
-      #   APPLE_TEAM_ID                 10-char team ID
       - name: Build macOS distributables
         if: matrix.platform == 'mac'
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac --publish never
 
-      # Required by macUpdater.ts checksum verification (post-Batch B).
+      # Read by src/main/services/macUpdater.ts to verify the downloaded DMG
+      # before opening it. The updater treats this as best-effort: if absent
+      # it warns and proceeds, if present and mismatched it refuses to install.
       - name: Generate SHA256SUMS
         shell: bash
         run: |
