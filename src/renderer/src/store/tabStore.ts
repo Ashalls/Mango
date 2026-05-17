@@ -73,6 +73,7 @@ interface TabStore {
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
   getActiveTab: () => Tab | null
+  reorderTabs: (fromId: string, toId: string) => void
 
   // Query actions (operate on active tab)
   setFilter: (filter: Record<string, unknown>) => void
@@ -243,6 +244,20 @@ export const useTabStore = create<TabStore>((set, get) => ({
   getActiveTab: () => {
     const { tabs, activeTabId } = get()
     return tabs.find((t) => t.id === activeTabId) || null
+  },
+
+  reorderTabs: (fromId, toId) => {
+    if (fromId === toId) return
+    set((state) => {
+      const fromIdx = state.tabs.findIndex((t) => t.id === fromId)
+      const toIdx = state.tabs.findIndex((t) => t.id === toId)
+      if (fromIdx < 0 || toIdx < 0) return state
+      const next = state.tabs.slice()
+      const [moved] = next.splice(fromIdx, 1)
+      next.splice(toIdx, 0, moved)
+      return { tabs: next }
+    })
+    get().saveTabs()
   },
 
   updateTab: (tabId, updates) => {
