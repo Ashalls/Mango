@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, RefreshCw, Trash2, Loader2, Pencil } from 'lucide-react'
+import { Plus, RefreshCw, Trash2, Loader2, Pencil, Sparkles } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
+import { useConnectionStore } from '@renderer/store/connectionStore'
 import { trpc } from '@renderer/lib/trpc'
 import { CreateIndexDialog, type EditIndexInfo } from './CreateIndexDialog'
 
@@ -50,6 +51,7 @@ function formatSize(bytes: number | undefined): string {
 
 export function IndexPanel() {
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
+  const profiles = useConnectionStore((s) => s.profiles)
   const [indexes, setIndexes] = useState<IndexInfo[]>([])
   const [stats, setStats] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(false)
@@ -93,6 +95,22 @@ export function IndexPanel() {
     fetchIndexes()
   }, [fetchIndexes])
 
+  const handleRecommendIndexes = async () => {
+    if (!database || !collection || !activeTab) return
+    const profile = profiles.find((p) => p.id === activeTab.connectionId)
+    try {
+      await trpc.claude.recommendIndexes.mutate({
+        context: {
+          database,
+          collection,
+          connectionName: profile?.name
+        }
+      })
+    } catch (err) {
+      console.error('Failed to start index recommendation:', err)
+    }
+  }
+
   const handleDrop = async (indexName: string) => {
     if (!window.confirm(`Drop index "${indexName}"? This action cannot be undone.`)) return
     try {
@@ -125,6 +143,15 @@ export function IndexPanel() {
           <Button variant="ghost" size="sm" onClick={fetchIndexes} disabled={loading}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRecommendIndexes}
+            title="Ask Claude to analyse the collection and recommend indexes based on profiler data, schema sampling, and the linked codebase (if any)."
+          >
+            <Sparkles className="mr-1 h-3.5 w-3.5" />
+            Recommend with Claude
           </Button>
           <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
             <Plus className="mr-1 h-3.5 w-3.5" />

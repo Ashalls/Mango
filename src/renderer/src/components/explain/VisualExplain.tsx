@@ -9,7 +9,11 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import Editor from '@monaco-editor/react'
+import { Sparkles } from 'lucide-react'
 import { useSettingsStore } from '@renderer/store/settingsStore'
+import { useTabStore } from '@renderer/store/tabStore'
+import { useConnectionStore } from '@renderer/store/connectionStore'
+import { trpc } from '@renderer/lib/trpc'
 import type { ExplainPlan, ExplainStageNode } from '@shared/types'
 
 const efficiencyColors = {
@@ -78,6 +82,25 @@ export function VisualExplain({ plan }: { plan: ExplainPlan }) {
   const [showRawJson, setShowRawJson] = useState(false)
   const [selectedStage, setSelectedStage] = useState<ExplainStageNode | null>(null)
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
+  const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
+  const profiles = useConnectionStore((s) => s.profiles)
+
+  const handleInterpretExplain = async () => {
+    if (!activeTab?.database || !activeTab?.collection) return
+    const profile = profiles.find((p) => p.id === activeTab.connectionId)
+    try {
+      await trpc.claude.interpretExplain.mutate({
+        context: {
+          database: activeTab.database,
+          collection: activeTab.collection,
+          connectionName: profile?.name
+        },
+        filter: activeTab.filter && Object.keys(activeTab.filter).length > 0 ? activeTab.filter : undefined
+      })
+    } catch (err) {
+      console.error('Failed to start explain interpretation:', err)
+    }
+  }
 
   const hasCollscan = useMemo(
     () => plan.stages.some((s) => s.type === 'COLLSCAN'),
@@ -130,7 +153,16 @@ export function VisualExplain({ plan }: { plan: ExplainPlan }) {
             {plan.indexSuggestion}
           </span>
         )}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            onClick={handleInterpretExplain}
+            title="Ask Claude to read this plan and explain what's slow"
+            disabled={!activeTab?.database || !activeTab?.collection}
+          >
+            <Sparkles className="h-3 w-3" />
+            Explain with Claude
+          </button>
           <button
             className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
               showRawJson
