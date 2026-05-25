@@ -214,7 +214,11 @@ function deserialize(doc) {
 
 // Stream a JSON array file line by line, yielding parsed objects in batches.
 // Works with our export format: [\\n  {\\n    ...\\n  },\\n  {\\n    ...\\n  }\\n]
+// Yields { docs, bytesRead, parseErrors, fileSize } so the parent can report
+// byte-based progress (doc totals are unknown without a full pre-pass) and so
+// documents that fail to parse are surfaced rather than silently dropped.
 async function* readJsonArrayStreaming(filePath, batchSize) {
+  const fileSize = statSync(filePath).size;
   const rl = createInterface({
     input: createReadStream(filePath, { encoding: 'utf-8' }),
     crlfDelay: Infinity
@@ -222,8 +226,12 @@ async function* readJsonArrayStreaming(filePath, batchSize) {
   let lines = [];
   let depth = 0;
   let batch = [];
+  let bytesRead = 0;
+  let parseErrors = 0;
 
   for await (const line of rl) {
+    bytesRead += Buffer.byteLength(line, 'utf-8') + 1; // +1 approximates the stripped newline
+
     const trimmed = line.trim();
     if (depth === 0 && (trimmed === '[' || trimmed === ']' || trimmed === '')) continue;
 
@@ -242,6 +250,11 @@ async function* readJsonArrayStreaming(filePath, batchSize) {
       else if (ch === '}') depth--;
     }
 
+    // Brace-desync guard: a miscounted '}' would push depth negative, after
+    // which depth===0 is never hit again and the import hangs silently while
+    // reading the rest of the file into memory. Resync at a top-level boundary.
+    if (depth < 0) { depth = 0; lines = []; parseErrors++; continue; }
+
     lines.push(line);
 
     if (depth === 0 && lines.length > 0) {
@@ -250,15 +263,20 @@ async function* readJsonArrayStreaming(filePath, batchSize) {
       if (jsonStr.endsWith(',')) jsonStr = jsonStr.slice(0, -1);
       try {
         batch.push(JSON.parse(jsonStr));
-      } catch {}
+      } catch {
+        parseErrors++;
+      }
       lines = [];
       if (batch.length >= batchSize) {
-        yield batch;
+        yield { docs: batch, bytesRead, parseErrors, fileSize };
         batch = [];
+        parseErrors = 0;
       }
     }
   }
-  if (batch.length > 0) yield batch;
+  if (batch.length > 0 || parseErrors > 0) {
+    yield { docs: batch, bytesRead, parseErrors, fileSize };
+  }
 }
 
 async function run() {
@@ -269,44 +287,82 @@ async function run() {
     await client.connect();
     const db = client.db(database);
 
+    // On a replica set, the default index-build commit quorum ("votingMembers")
+    // can wedge the build in its drain/commit phase on some single-node RS
+    // instances — the build finishes scanning but never commits. commitQuorum:0
+    // bypasses that coordination and builds immediately. It is only valid on a
+    // replica set, so detect topology and apply it conditionally.
+    let isReplicaSet = false;
+    try {
+      const hello = await client.db('admin').command({ hello: 1 });
+      isReplicaSet = !!hello.setName;
+    } catch {}
+
     if (dropTarget) {
       try { await db.dropCollection(colName); } catch {}
     }
 
     const filePath = path.join(importDir, file);
     let copied = 0;
+    let errors = 0;
 
-    for await (const batch of readJsonArrayStreaming(filePath, 2000)) {
-      const restored = batch.map(deserialize);
-      try {
-        await db.collection(colName).insertMany(restored, { ordered: false });
-        copied += restored.length;
-      } catch (e) {
-        // BulkWriteError — some docs inserted, some had duplicate keys
-        if (e.insertedCount !== undefined) {
-          copied += e.insertedCount;
-        }
-        // Other errors: don't count, log for debugging
-        send({ type: 'batch-error', error: (e.message || String(e)).slice(0, 200) });
+    for await (const { docs, bytesRead, parseErrors, fileSize } of readJsonArrayStreaming(filePath, 2000)) {
+      errors += parseErrors;
+      if (parseErrors > 0) {
+        send({ type: 'batch-error', error: parseErrors + ' document(s) could not be parsed and were skipped' });
       }
-      send({ type: 'progress', copied });
+      if (docs.length > 0) {
+        const restored = docs.map(deserialize);
+        try {
+          const res = await db.collection(colName).insertMany(restored, { ordered: false });
+          copied += (res && typeof res.insertedCount === 'number') ? res.insertedCount : restored.length;
+        } catch (e) {
+          // BulkWriteError — some docs inserted, some rejected (e.g. duplicate keys)
+          const inserted = (typeof e.insertedCount === 'number') ? e.insertedCount
+            : (e.result && typeof e.result.insertedCount === 'number') ? e.result.insertedCount
+            : 0;
+          copied += inserted;
+          errors += (e.writeErrors && e.writeErrors.length) || (restored.length - inserted) || 1;
+          send({ type: 'batch-error', error: (e.message || String(e)).slice(0, 200) });
+        }
+      }
+      send({ type: 'progress', copied, errors, bytesRead, fileSize });
     }
 
-    // Restore indexes
+    // Restore indexes. Each build is bounded by maxTimeMS so a stuck or
+    // contended index build (e.g. one left draining by a previously cancelled
+    // import) can't wedge the whole import at "done" — we abort it, report it,
+    // and move on. Without this the worker blocks on await createIndex forever
+    // while all docs are already inserted (the deviceData "stuck at 99%" hang).
     const indexFile = path.join(importDir, colName + '.indexes.json');
     if (existsSync(indexFile)) {
-      try {
-        const indexes = JSON.parse(readFileSync(indexFile, 'utf-8'));
-        for (const idx of indexes) {
-          if (idx.name === '_id_') continue;
-          const { key, ...opts } = idx;
-          delete opts.v; delete opts.ns;
-          try { await db.collection(colName).createIndex(key, opts); } catch {}
+      let indexes = [];
+      try { indexes = JSON.parse(readFileSync(indexFile, 'utf-8')); } catch {}
+      const toBuild = (Array.isArray(indexes) ? indexes : []).filter((idx) => idx && idx.name !== '_id_');
+      if (toBuild.length > 0) send({ type: 'indexing', count: toBuild.length });
+      let buildTimedOut = false;
+      for (const idx of toBuild) {
+        // Fail fast: once one build hits the time limit, the server can't
+        // complete index builds right now, so skip the rest instead of waiting
+        // out maxTimeMS on each (see the single-node-RS index-build wedge).
+        if (buildTimedOut) {
+          send({ type: 'batch-error', error: 'Index "' + (idx.name || JSON.stringify(idx.key)) + '" skipped: server could not build indexes in time' });
+          continue;
         }
-      } catch {}
+        const { key, ...opts } = idx;
+        delete opts.v; delete opts.ns;
+        opts.maxTimeMS = 120000; // abort a stuck build rather than hang the import
+        if (isReplicaSet) opts.commitQuorum = 0; // avoid the quorum-commit wedge
+        try {
+          await db.collection(colName).createIndex(key, opts);
+        } catch (e) {
+          if (e.codeName === 'MaxTimeMSExpired' || e.code === 50) buildTimedOut = true;
+          send({ type: 'batch-error', error: 'Index "' + (idx.name || JSON.stringify(key)) + '" skipped: ' + (e.message || String(e)).slice(0, 150) });
+        }
+      }
     }
 
-    send({ type: 'done', copied, total: copied });
+    send({ type: 'done', copied, total: copied, errors });
   } catch (err) {
     send({ type: 'error', error: err.message || 'Import failed' });
   } finally {
@@ -501,14 +557,32 @@ function importCollectionInProcess(
 
     child.on('message', (msg: any) => {
       switch (msg.type) {
-        case 'total':
-          colProgress.total = msg.total
-          emitProgress('operation:progress', op)
-          break
-        case 'progress':
+        case 'progress': {
           colProgress.copied = msg.copied
           copied = msg.copied
-          op.currentStep = `Importing ${colName} (${msg.copied.toLocaleString()}/${colProgress.total.toLocaleString()})`
+          // Doc totals are unknown for a streamed import, so progress is by
+          // bytes read from the file — capped at 99% until 'done' confirms.
+          const pct =
+            msg.fileSize > 0 ? Math.min(99, Math.round((msg.bytesRead / msg.fileSize) * 100)) : 0
+          const skipped = msg.errors > 0 ? `, ${msg.errors.toLocaleString()} skipped` : ''
+          op.currentStep =
+            msg.fileSize > 0
+              ? `Importing ${colName} (${msg.copied.toLocaleString()} docs, ${pct}%${skipped})`
+              : `Importing ${colName} (${msg.copied.toLocaleString()} docs${skipped})`
+          emitProgress('operation:progress', op)
+          break
+        }
+        case 'batch-error':
+          // A batch partially failed (duplicate keys, validation, malformed
+          // docs) or an index was skipped. Surface it; the import keeps going.
+          colProgress.error = msg.error
+          console.warn(`[import] ${colName}: ${msg.error}`)
+          emitProgress('operation:progress', op)
+          break
+        case 'indexing':
+          // All docs are in; building indexes can take a while, so show it
+          // rather than leaving the bar frozen at the last doc count.
+          op.currentStep = `Rebuilding ${msg.count} index(es) for ${colName}…`
           emitProgress('operation:progress', op)
           break
         case 'done':
@@ -516,6 +590,8 @@ function importCollectionInProcess(
           colProgress.copied = msg.copied
           colProgress.total = msg.total
           copied = msg.copied
+          colProgress.error =
+            msg.errors > 0 ? `${msg.errors.toLocaleString()} docs skipped` : undefined
           op.processed++
           emitProgress('operation:progress', op)
           break
