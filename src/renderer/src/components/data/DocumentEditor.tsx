@@ -1,5 +1,5 @@
-import { X, Copy, Check, Save, Undo2 } from 'lucide-react'
-import { useState } from 'react'
+import { X, Copy, Check, Save, Undo2, Maximize2, Minimize2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
@@ -13,6 +13,18 @@ export function DocumentEditor() {
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  // Escape restores the docked editor when popped out. Content lives in the
+  // tab store, so collapsing never loses edits.
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpanded(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded])
 
   if (!tab?.selectedDocument) return null
 
@@ -51,8 +63,8 @@ export function DocumentEditor() {
     }
   }
 
-  return (
-    <div className="flex h-full flex-col border-t border-border">
+  const body = (
+    <>
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Document Editor</span>
@@ -74,6 +86,15 @@ export function DocumentEditor() {
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopy}>
             {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? 'Restore editor (Esc)' : 'Pop out editor'}
+          >
+            {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearDocument}>
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -82,7 +103,7 @@ export function DocumentEditor() {
       {error && (
         <div className="border-b border-border bg-destructive/10 px-4 py-1.5 text-xs text-destructive">{error}</div>
       )}
-      <div className="flex-1">
+      <div className="min-h-0 flex-1">
         <Editor
           height="100%"
           defaultLanguage="json"
@@ -101,6 +122,18 @@ export function DocumentEditor() {
           }}
         />
       </div>
-    </div>
+    </>
   )
+
+  if (expanded) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-black/60 p-6">
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+          {body}
+        </div>
+      </div>
+    )
+  }
+
+  return <div className="flex h-full flex-col border-t border-border">{body}</div>
 }
