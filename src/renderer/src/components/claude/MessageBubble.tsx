@@ -2,6 +2,13 @@ import Markdown from 'react-markdown'
 import { cn } from '@renderer/lib/utils'
 import type { ChatMessage } from '@shared/types'
 
+function modelLabel(model: string): string {
+  if (model.includes('opus')) return 'Opus'
+  if (model.includes('sonnet')) return 'Sonnet'
+  if (model.includes('haiku')) return 'Haiku'
+  return model
+}
+
 interface MessageBubbleProps {
   message: ChatMessage
 }
@@ -53,6 +60,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           >
             {message.content}
           </Markdown>
+        )}
+        {!isUser && message.usage && (
+          <div className="mt-1.5 border-t border-border/40 pt-1 text-[10px] text-muted-foreground">
+            {modelLabel(message.usage.model)} · {message.usage.inputTokens.toLocaleString()} in /{' '}
+            {message.usage.outputTokens.toLocaleString()} out
+            {message.usage.costUsd ? ` · $${message.usage.costUsd.toFixed(4)}` : ''}
+          </div>
         )}
       </div>
     </div>
