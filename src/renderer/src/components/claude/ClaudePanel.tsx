@@ -10,6 +10,8 @@ import { trpc } from '@renderer/lib/trpc'
 import type { ChatMessage, ToolCallInfo } from '@shared/types'
 import { playPurr, playHiss } from '@renderer/components/fun/CatMode'
 import { useSettingsStore, CLAUDE_MODELS } from '@renderer/store/settingsStore'
+import { useClaudeStore } from '@renderer/store/claudeStore'
+import { ClaudeSetup } from './ClaudeSetup'
 
 export function ClaudePanel() {
   const [input, setInput] = useState('')
@@ -27,8 +29,10 @@ export function ClaudePanel() {
 
   const claudeModel = useSettingsStore((s) => s.claudeModel)
   const setClaudeModel = useSettingsStore((s) => s.setClaudeModel)
+  const claudeStatus = useClaudeStore((s) => s.availability.status)
 
   const messages = tab?.messages ?? []
+  const chatCost = messages.reduce((sum, m) => sum + (m.usage?.costUsd ?? 0), 0)
   const isStreaming = tab?.isStreaming ?? false
 
   useEffect(() => {
@@ -92,11 +96,16 @@ export function ClaudePanel() {
       }
     }
 
-    const handleStreamEnd = (_: unknown, data: { messageId: string; text: string; lastTurnText?: string }) => {
+    const handleStreamEnd = (
+      _: unknown,
+      data: { messageId: string; text: string; lastTurnText?: string; usage?: import('@shared/types').ClaudeUsage }
+    ) => {
       const store = useTabStore.getState()
       store.setStreaming(false)
       if (data.text) {
-        store.updateMessage(data.messageId, { content: data.text })
+        store.updateMessage(data.messageId, { content: data.text, usage: data.usage })
+      } else if (data.usage) {
+        store.updateMessage(data.messageId, { usage: data.usage })
       }
       // Mark all pending tools as success
       const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
@@ -256,6 +265,17 @@ export function ClaudePanel() {
     }
   }
 
+  if (claudeStatus !== 'ready') {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between gap-2 border-b border-sidebar-border p-3">
+          <span className="text-sm font-medium">Claude</span>
+        </div>
+        <ClaudeSetup />
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -288,6 +308,11 @@ export function ClaudePanel() {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {chatCost > 0 && (
+            <span className="shrink-0 text-[10px] text-muted-foreground" title="Total cost of this chat">
+              ${chatCost.toFixed(4)}
+            </span>
+          )}
           <select
             className="h-6 rounded border border-border bg-transparent px-1 text-[11px] text-foreground outline-none focus:ring-1 focus:ring-ring"
             value={claudeModel}
