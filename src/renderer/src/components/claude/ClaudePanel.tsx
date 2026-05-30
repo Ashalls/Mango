@@ -9,6 +9,7 @@ import { ToolCallGroup } from './ToolCallGroup'
 import { trpc } from '@renderer/lib/trpc'
 import type { ChatMessage, ToolCallInfo } from '@shared/types'
 import { playPurr, playHiss } from '@renderer/components/fun/CatMode'
+import { useSettingsStore, CLAUDE_MODELS } from '@renderer/store/settingsStore'
 
 export function ClaudePanel() {
   const [input, setInput] = useState('')
@@ -23,6 +24,9 @@ export function ClaudePanel() {
 
   const profiles = useConnectionStore((s) => s.profiles)
   const activeConnection = useConnectionStore((s) => s.activeConnection)
+
+  const claudeModel = useSettingsStore((s) => s.claudeModel)
+  const setClaudeModel = useSettingsStore((s) => s.setClaudeModel)
 
   const messages = tab?.messages ?? []
   const isStreaming = tab?.isStreaming ?? false
@@ -138,10 +142,15 @@ export function ClaudePanel() {
           .mutate({
             tabId: currentTab.id,
             sessionId: currentTab.chatSessionId,
-            messages: currentTab.messages
+            messages: currentTab.messages,
+            sdkSessionId: currentTab.sdkSessionId
           })
           .catch(() => {})
       }
+    }
+
+    const handleSession = (_: unknown, data: { messageId: string; sessionId: string }) => {
+      if (data.sessionId) useTabStore.getState().setSdkSessionId(data.sessionId)
     }
 
     electron.ipcRenderer.on('claude:stream-start', handleStreamStart)
@@ -150,6 +159,7 @@ export function ClaudePanel() {
     electron.ipcRenderer.on('claude:tool-result', handleToolResult)
     electron.ipcRenderer.on('claude:find-results', handleFindResults)
     electron.ipcRenderer.on('claude:stream-end', handleStreamEnd)
+    electron.ipcRenderer.on('claude:session', handleSession)
 
     return () => {
       electron.ipcRenderer.removeAllListeners('claude:stream-start')
@@ -158,6 +168,7 @@ export function ClaudePanel() {
       electron.ipcRenderer.removeAllListeners('claude:tool-result')
       electron.ipcRenderer.removeAllListeners('claude:find-results')
       electron.ipcRenderer.removeAllListeners('claude:stream-end')
+      electron.ipcRenderer.removeAllListeners('claude:session')
     }
   }, [])
 
@@ -187,7 +198,8 @@ export function ClaudePanel() {
                 })
                 store.updateTab(tab.id, {
                   messages,
-                  chatSessionId: session.id
+                  chatSessionId: session.id,
+                  sdkSessionId: session.sdkSessionId
                 })
               }
             })
@@ -214,6 +226,8 @@ export function ClaudePanel() {
     try {
       await trpc.claude.sendMessage.mutate({
         message: userMessage.content,
+        model: claudeModel,
+        resumeSessionId: tab.sdkSessionId,
         context: {
           connectionName: activeProfile?.name,
           database: tab.database || undefined,
@@ -229,7 +243,7 @@ export function ClaudePanel() {
       console.error('Failed to send message:', err)
       setStreaming(false)
     }
-  }, [input, isStreaming, tab, profiles, activeConnection])
+  }, [input, isStreaming, tab, profiles, activeConnection, claudeModel])
 
   const handleAbort = async () => {
     await trpc.claude.abort.mutate()
@@ -274,6 +288,18 @@ export function ClaudePanel() {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <select
+            className="h-6 rounded border border-border bg-transparent px-1 text-[11px] text-foreground outline-none focus:ring-1 focus:ring-ring"
+            value={claudeModel}
+            onChange={(e) => setClaudeModel(e.target.value as typeof claudeModel)}
+            title="Model used by the assistant"
+          >
+            {CLAUDE_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
           <Button
             variant="ghost"
             size="sm"
@@ -333,7 +359,8 @@ export function ClaudePanel() {
                     })
                     store.updateTab(tab!.id, {
                       messages,
-                      chatSessionId: session.id
+                      chatSessionId: session.id,
+                      sdkSessionId: session.sdkSessionId
                     })
                   }
                   setShowHistory(false)
