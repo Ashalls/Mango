@@ -4,6 +4,7 @@ import { homedir } from 'os'
 export const CONFIG_DIR = join(homedir(), '.mango')
 export const CONNECTIONS_FILE = join(CONFIG_DIR, 'connections.json')
 export const SETTINGS_FILE = join(CONFIG_DIR, 'settings.json')
+export const CLAUDE_SECRET_FILE = join(CONFIG_DIR, 'claude.json')
 export const CHANGELOG_FILE = join(CONFIG_DIR, 'changelog.json')
 export const QUERY_HISTORY_FILE = join(CONFIG_DIR, 'query-history.json')
 export const FOLDERS_FILE = join(CONFIG_DIR, 'folders.json')

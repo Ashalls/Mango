@@ -59,6 +59,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   toolCalls?: ToolCallInfo[]
+  usage?: ClaudeUsage
   timestamp: number
 }
 
@@ -245,4 +246,28 @@ export interface CodegenInput {
   limit?: number
   pipeline?: Record<string, unknown>[]
   includeBoilerplate: boolean
+}
+
+export type ClaudeAuthMethod = 'subscription' | 'apiKey'
+
+export type ClaudeAvailabilityStatus =
+  | 'unknown'
+  | 'checking'
+  | 'ready'
+  | 'unauthenticated'
+  | 'cli-error'
+  | 'error'
+
+export interface ClaudeAvailability {
+  status: ClaudeAvailabilityStatus
+  method: ClaudeAuthMethod
+  detail?: string
+  checkedAt: number
+}
+
+export interface ClaudeUsage {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  costUsd?: number
 }
