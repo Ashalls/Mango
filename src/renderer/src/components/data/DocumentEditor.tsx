@@ -6,25 +6,30 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { trpc } from '@renderer/lib/trpc'
 
-export function DocumentEditor() {
+export function DocumentEditor({
+  expanded,
+  onExpandedChange
+}: {
+  expanded: boolean
+  onExpandedChange: (value: boolean) => void
+}) {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setEditorContent, clearDocument, executeQuery } = useTabStore()
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
 
   // Escape restores the docked editor when popped out. Content lives in the
   // tab store, so collapsing never loses edits.
   useEffect(() => {
     if (!expanded) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setExpanded(false)
+      if (e.key === 'Escape') onExpandedChange(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [expanded])
+  }, [expanded, onExpandedChange])
 
   if (!tab?.selectedDocument) return null
 
@@ -90,7 +95,7 @@ export function DocumentEditor() {
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => onExpandedChange(!expanded)}
             title={expanded ? 'Restore editor (Esc)' : 'Pop out editor'}
           >
             {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}

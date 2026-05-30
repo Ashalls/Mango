@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, useRef } from 'react'
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community'
 import type { CellEditingStoppedEvent } from 'ag-grid-community'
@@ -150,7 +150,7 @@ function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
   )
 }
 
-export function DocumentTable({ viewMode: viewModeProp, onViewModeChange }: { viewMode?: ViewMode; onViewModeChange?: (mode: ViewMode) => void } = {}) {
+export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popoutExpanded }: { viewMode?: ViewMode; onViewModeChange?: (mode: ViewMode) => void; popoutExpanded?: boolean } = {}) {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const { selectDocument, setPage, setPageSize, executeQuery, setSelectedDocIds } = useTabStore()
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
@@ -166,6 +166,19 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange }: { vi
   const [pageInput, setPageInput] = useState('')
   const pageInputRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<AgGridReact>(null)
+
+  // When the document-editor pop-out closes (popoutExpanded: true -> false),
+  // ag-grid can leave its rows stuck at 0px height — only a re-render re-lays
+  // them out. Lifting popoutExpanded into a prop already forces that re-render;
+  // this resets the row heights directly too, as a safety net. The rAF lets the
+  // docked layout settle first. (undefined = this table isn't the pop-out split.)
+  useEffect(() => {
+    if (popoutExpanded !== false) return
+    const raf = requestAnimationFrame(() => {
+      gridRef.current?.api?.resetRowHeights()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [popoutExpanded])
 
   if (!tab) return null
 

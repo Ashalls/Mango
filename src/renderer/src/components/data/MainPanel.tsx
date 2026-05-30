@@ -20,6 +20,11 @@ export function MainPanel() {
   const [subTab, setSubTab] = useState<'documents' | 'aggregation' | 'explain' | 'indexes' | 'validation'>('documents')
   const [viewMode, setViewMode] = useState<'table' | 'tree' | 'json'>('table')
   const [explainPlan, setExplainPlan] = useState<ExplainPlan | null>(null)
+  // The document-editor pop-out state lives here (not inside DocumentEditor) so
+  // that closing the pop-out re-renders DocumentTable too — ag-grid leaves its
+  // rows stuck at 0px height after the pop-out overlay reflows, and only a
+  // re-render of the table forces it to re-lay-out the rows.
+  const [editorExpanded, setEditorExpanded] = useState(false)
 
   const splitRef = useRef<HTMLDivElement>(null)
   const documentSplitRatio = useSettingsStore((s) => s.documentSplitRatio)
@@ -63,6 +68,12 @@ export function MainPanel() {
   useEffect(() => {
     setSubTab('documents')
   }, [activeTab?.id])
+
+  // Collapse the popped-out editor when the document is closed, so re-opening a
+  // document later doesn't immediately re-enter the pop-out.
+  useEffect(() => {
+    if (!activeTab?.selectedDocument) setEditorExpanded(false)
+  }, [activeTab?.selectedDocument])
 
   return (
     <div className="flex h-full flex-col">
@@ -161,7 +172,7 @@ export function MainPanel() {
                           to 0 and sticks) — which the document-editor pop-out's
                           position:fixed overlay triggers. A definite % height is immune. */}
                       <div className="min-h-0" style={{ height: `${documentSplitRatio * 100}%`, flexShrink: 0 }}>
-                        <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
+                        <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} popoutExpanded={editorExpanded} />
                       </div>
                       <div
                         className="h-1.5 shrink-0 cursor-row-resize bg-border transition-colors hover:bg-emerald-500/50"
@@ -171,7 +182,7 @@ export function MainPanel() {
                       {/* Editor pane takes the remaining height; Monaco self-sizes via
                           automaticLayout, so flex-grow here is safe. */}
                       <div className="min-h-0 flex-1">
-                        <DocumentEditor />
+                        <DocumentEditor expanded={editorExpanded} onExpandedChange={setEditorExpanded} />
                       </div>
                     </div>
                   ) : (
