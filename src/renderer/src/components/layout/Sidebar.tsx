@@ -356,6 +356,18 @@ export function Sidebar() {
                 Connect
               </ContextMenu.Item>
             )}
+            {isThisConnected && (
+              <ContextMenu.Item
+                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
+                onSelect={() => {
+                  if (!isThisActive) setActive(profile.id)
+                  loadDatabases()
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh Databases
+              </ContextMenu.Item>
+            )}
             {isThisConnected && !profile.isProduction && !profile.isReadOnly && (
               <ContextMenu.Item
                 className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
