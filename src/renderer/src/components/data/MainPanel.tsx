@@ -154,7 +154,13 @@ export function MainPanel() {
                   <BulkToolbar />
                   {viewMode === 'table' && activeTab.selectedDocument ? (
                     <div ref={splitRef} className="flex flex-1 min-h-0 flex-col">
-                      <div className="min-h-0" style={{ flexGrow: documentSplitRatio, flexBasis: 0 }}>
+                      {/* The table pane uses a DEFINITE percentage height rather than
+                          flexBasis:0 + flexGrow. ag-grid resolves its own height:100%
+                          against this pane, and Chromium fails to re-resolve a %-height
+                          child of a flex-basis:0 grown item after a reflow (it collapses
+                          to 0 and sticks) — which the document-editor pop-out's
+                          position:fixed overlay triggers. A definite % height is immune. */}
+                      <div className="min-h-0" style={{ height: `${documentSplitRatio * 100}%`, flexShrink: 0 }}>
                         <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
                       </div>
                       <div
@@ -162,7 +168,9 @@ export function MainPanel() {
                         onPointerDown={startSplitDrag}
                         title="Drag to resize"
                       />
-                      <div className="min-h-0" style={{ flexGrow: 1 - documentSplitRatio, flexBasis: 0 }}>
+                      {/* Editor pane takes the remaining height; Monaco self-sizes via
+                          automaticLayout, so flex-grow here is safe. */}
+                      <div className="min-h-0 flex-1">
                         <DocumentEditor />
                       </div>
                     </div>
