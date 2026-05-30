@@ -6,6 +6,7 @@ import { Switch } from '@renderer/components/ui/switch'
 import { cn } from '@renderer/lib/utils'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useTabStore } from '@renderer/store/tabStore'
+import { trpc } from '@renderer/lib/trpc'
 import { useClaudeStore } from '@renderer/store/claudeStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { ValueSearchDialog } from '@renderer/components/search/ValueSearchDialog'
@@ -17,10 +18,18 @@ export function TopBar() {
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const togglePanel = useClaudeStore((s) => s.togglePanel)
   const isPanelOpen = useClaudeStore((s) => s.isPanelOpen)
-  const { theme, setTheme, catSounds, setCatSounds } = useSettingsStore()
+  const { theme, setTheme, catSounds, setCatSounds, claudeAuthMethod, setClaudeAuthMethod, claudeMaxBudgetUsd, setClaudeMaxBudgetUsd } = useSettingsStore()
+  const availability = useClaudeStore((s) => s.availability)
+  const setAvailability = useClaudeStore((s) => s.setAvailability)
+  const [hasKey, setHasKey] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateManualInstall, setUpdateManualInstall] = useState(false)
   const [valueSearchOpen, setValueSearchOpen] = useState(false)
+
+  useEffect(() => {
+    trpc.claude.hasApiKey.query().then(setHasKey).catch(() => {})
+  }, [availability.status])
 
   useEffect(() => {
     const handler = (
@@ -160,6 +169,119 @@ export function TopBar() {
                   checked={catSounds}
                   onCheckedChange={setCatSounds}
                 />
+              </div>
+
+              {/* Claude AI */}
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm">Claude AI</label>
+                  <span
+                    className={cn(
+                      'text-[10px]',
+                      availability.status === 'ready' ? 'text-emerald-400' : 'text-muted-foreground'
+                    )}
+                  >
+                    {availability.status === 'ready'
+                      ? 'Ready'
+                      : availability.status === 'checking'
+                        ? 'Checking…'
+                        : availability.status === 'unauthenticated'
+                          ? 'Not signed in'
+                          : availability.status === 'cli-error'
+                            ? 'CLI error'
+                            : availability.status === 'error'
+                              ? 'Unavailable'
+                              : '—'}
+                  </span>
+                </div>
+
+                <div className="flex gap-1 rounded-md bg-muted p-1">
+                  {([
+                    { value: 'subscription' as const, label: 'Subscription' },
+                    { value: 'apiKey' as const, label: 'API key' }
+                  ]).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      className={cn(
+                        'flex-1 rounded-sm px-2 py-1 text-xs transition-colors',
+                        claudeAuthMethod === value
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                      onClick={async () => {
+                        if (claudeAuthMethod !== value) {
+                          setClaudeAuthMethod(value)
+                          setAvailability(await trpc.claude.recheck.mutate())
+                        }
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {claudeAuthMethod === 'apiKey' &&
+                  (hasKey ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-emerald-400">Key set ✓</span>
+                      <button
+                        className="text-xs text-muted-foreground hover:text-destructive"
+                        onClick={async () => {
+                          const res = await trpc.claude.clearApiKey.mutate()
+                          setHasKey(false)
+                          setAvailability(res.availability)
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="password"
+                        className="flex-1 rounded-md border border-input bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        placeholder="sk-ant-…"
+                        value={keyInput}
+                        onChange={(e) => setKeyInput(e.target.value)}
+                      />
+                      <button
+                        className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-50"
+                        disabled={!keyInput.trim()}
+                        onClick={async () => {
+                          const res = await trpc.claude.setApiKey.mutate({ key: keyInput.trim() })
+                          if (res.ok) {
+                            setKeyInput('')
+                            setHasKey(true)
+                          }
+                          setAvailability(res.availability)
+                        }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ))}
+
+                {claudeAuthMethod === 'apiKey' && (
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs text-muted-foreground">Max $ / message</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.05"
+                      placeholder="none"
+                      className="w-20 rounded-md border border-input bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={claudeMaxBudgetUsd ?? ''}
+                      onChange={(e) => setClaudeMaxBudgetUsd(e.target.value === '' ? null : Number(e.target.value))}
+                    />
+                  </div>
+                )}
+
+                <button
+                  className="flex w-full items-center justify-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={async () => setAvailability(await trpc.claude.recheck.mutate())}
+                >
+                  Re-check
+                </button>
               </div>
             </div>
           </PopoverContent>
