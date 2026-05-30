@@ -19,11 +19,17 @@ export const claudeRouter = router({
       z.object({
         message: z.string(),
         context: ContextSchema,
-        mcpPort: z.number().optional()
+        mcpPort: z.number().optional(),
+        model: z.string().optional(),
+        resumeSessionId: z.string().optional()
       })
     )
     .mutation(async ({ input }) => {
-      claudeService.sendMessage(input.message, input.context, input.mcpPort)
+      claudeService.sendMessage(input.message, input.context, input.mcpPort, {
+        model: input.model,
+        resumeSessionId: input.resumeSessionId,
+        emitSessionId: true
+      })
       return { started: true }
     }),
 

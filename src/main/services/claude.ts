@@ -178,10 +178,20 @@ function buildSystemPrompt(context: ChatContext): string {
   return lines.join('\n')
 }
 
+interface SendOptions {
+  /** Model id (defaults to Sonnet 4.6). */
+  model?: string
+  /** SDK session id to resume, for conversation continuity. */
+  resumeSessionId?: string
+  /** When true, emit the SDK session id to the renderer (chat path only). */
+  emitSessionId?: boolean
+}
+
 export async function sendMessage(
   message: string,
   context: ChatContext,
-  mcpPort: number = DEFAULT_MCP_PORT
+  mcpPort: number = DEFAULT_MCP_PORT,
+  opts: SendOptions = {}
 ): Promise<void> {
   if (activeAbortController) {
     activeAbortController.abort()
@@ -200,7 +210,10 @@ export async function sendMessage(
         pathToClaudeCodeExecutable: getClaudeExecutablePath(),
         ...getSpawnOverrides(),
         systemPrompt: buildSystemPrompt(context),
-        model: 'claude-sonnet-4-5-20250929',
+        model: opts.model || 'claude-sonnet-4-6',
+        resume: opts.resumeSessionId,
+        persistSession: true,
+        includePartialMessages: true,
         abortController: activeAbortController,
         mcpServers: {
           mango: {
@@ -235,120 +248,97 @@ export async function sendMessage(
           'mcp__mango__mongo_search_codebase'
         ],
         tools: [],
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        maxTurns: 200,
-        persistSession: false
+        permissionMode: 'default',
+        canUseTool: async (toolName, input) => {
+          // The MCP tool layer (src/main/mcp/tools.ts) is the authoritative
+          // enforcer of production / read-only / per-db write rules. This
+          // callback only ensures Claude cannot invoke tools outside Mango's
+          // own MCP surface, and replaces the previous bypassPermissions flag.
+          if (toolName.startsWith('mcp__mango__')) {
+            return { behavior: 'allow', updatedInput: input }
+          }
+          return { behavior: 'deny', message: `Tool "${toolName}" is not available in Mango.` }
+        },
+        maxTurns: 200
       }
     })
 
-    let currentTurnText = ''
-    let previousTurnsText = ''
+    let assembledText = '' // completed assistant turns, joined
+    let liveText = '' // current in-flight assistant text (from stream deltas)
+    let lastTurnText = '' // final turn text, for the cat-sound heuristic
+    let sessionId = ''
     const seenToolCalls = new Set<string>()
-    const activeTurnToolIds: string[] = []
 
     for await (const msg of q) {
-      if (msg.type === 'assistant') {
-        const textBlocks = msg.message.content.filter(
-          (b: { type: string }) => b.type === 'text'
-        )
-        const turnText = textBlocks
-          .map((b: { type: string; text: string }) => b.text)
-          .join('')
-
-        // Detect new tool uses
-        const toolUseBlocks = msg.message.content.filter(
-          (b: { type: string }) => b.type === 'tool_use'
-        )
-        const newToolUses = toolUseBlocks.filter(
-          (b: { type: string; id: string }) => !seenToolCalls.has(b.id)
-        )
-
-        // Detect turn boundary: text changed completely or new tools after previous ones completed
-        const textChanged = turnText && currentTurnText && !turnText.startsWith(currentTurnText)
-        const newToolsAfterPrevious = newToolUses.length > 0 && activeTurnToolIds.length > 0
-
-        if (textChanged || newToolsAfterPrevious) {
-          // New turn — mark previous tools as complete
-          for (const toolId of activeTurnToolIds) {
-            emitToRenderer('claude:tool-result', {
-              messageId,
-              toolUseId: toolId,
-              result: '',
-              status: 'success'
-            })
-          }
-          activeTurnToolIds.length = 0
-          if (currentTurnText) {
-            previousTurnsText = fullText
-          }
-          currentTurnText = ''
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        sessionId = msg.session_id
+        if (opts.emitSessionId) emitToRenderer('claude:session', { messageId, sessionId })
+      } else if (msg.type === 'stream_event') {
+        const ev = msg.event as { type?: string; delta?: { type?: string; text?: string } }
+        if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
+          liveText += ev.delta.text
+          const display = assembledText ? `${assembledText}\n\n${liveText}` : liveText
+          emitToRenderer('claude:text-delta', { messageId, text: display })
         }
-
-        // Accumulate text across turns instead of replacing
-        if (turnText && turnText !== currentTurnText) {
-          currentTurnText = turnText
-          fullText = previousTurnsText
-            ? previousTurnsText + '\n\n' + turnText
-            : turnText
-          emitToRenderer('claude:text-delta', { messageId, text: fullText })
-        }
-
-        // Register new tool calls
-        for (const block of newToolUses) {
-          const tb = block as {
-            type: string
-            id: string
-            name: string
-            input: Record<string, unknown>
-          }
-          seenToolCalls.add(tb.id)
-          activeTurnToolIds.push(tb.id)
-          emitToRenderer('claude:tool-use', {
-            messageId,
-            toolCall: {
-              id: tb.id,
-              name: tb.name,
-              input: tb.input,
-              status: 'running'
+      } else if (msg.type === 'assistant') {
+        const blocks = msg.message.content as Array<{ type: string; [k: string]: unknown }>
+        for (const b of blocks) {
+          if (b.type === 'tool_use') {
+            const tb = b as unknown as { id: string; name: string; input: Record<string, unknown> }
+            if (!seenToolCalls.has(tb.id)) {
+              seenToolCalls.add(tb.id)
+              emitToRenderer('claude:tool-use', {
+                messageId,
+                toolCall: { id: tb.id, name: tb.name, input: tb.input, status: 'running' }
+              })
             }
-          })
+          }
         }
-
-        // Tool result blocks (if SDK includes them in assistant messages)
-        const toolResultBlocks = msg.message.content.filter(
-          (b: { type: string }) => b.type === 'tool_result'
-        )
-        for (const block of toolResultBlocks) {
-          const tr = block as { type: string; tool_use_id: string; content: unknown }
-          const idx = activeTurnToolIds.indexOf(tr.tool_use_id)
-          if (idx >= 0) activeTurnToolIds.splice(idx, 1)
-          emitToRenderer('claude:tool-result', {
-            messageId,
-            toolUseId: tr.tool_use_id,
-            result:
-              typeof tr.content === 'string' ? tr.content : JSON.stringify(tr.content),
-            status: 'success'
-          })
+        const turnText = blocks
+          .filter((b) => b.type === 'text')
+          .map((b) => (b as unknown as { text: string }).text)
+          .join('')
+        if (turnText) {
+          lastTurnText = turnText
+          assembledText = assembledText ? `${assembledText}\n\n${turnText}` : turnText
+          liveText = '' // finalized text supersedes the live preview for this turn
+          emitToRenderer('claude:text-delta', { messageId, text: assembledText })
+        }
+      } else if (msg.type === 'user') {
+        // Tool results return as user messages carrying tool_result blocks.
+        const content = msg.message.content
+        if (Array.isArray(content)) {
+          for (const b of content as Array<{ type?: string; tool_use_id?: string; content?: unknown }>) {
+            if (b.type === 'tool_result' && b.tool_use_id) {
+              emitToRenderer('claude:tool-result', {
+                messageId,
+                toolUseId: b.tool_use_id,
+                result: typeof b.content === 'string' ? b.content : JSON.stringify(b.content),
+                status: 'success'
+              })
+            }
+          }
         }
       } else if (msg.type === 'result') {
-        // Use result text if we didn't get any assistant text. The SDK only
-        // exposes .result on the success subtype; error subtypes have no
-        // payload to fall back on.
-        const resultText = 'result' in msg ? (msg as { result?: string }).result ?? '' : ''
-        const finalText = fullText || resultText
+        sessionId = msg.session_id || sessionId
+        if (opts.emitSessionId && sessionId) {
+          emitToRenderer('claude:session', { messageId, sessionId })
+        }
+        const resultText =
+          'result' in msg ? (msg as { result?: string }).result ?? '' : ''
+        const finalText = assembledText || liveText || resultText
         emitToRenderer('claude:stream-end', {
           messageId,
           text: finalText,
-          lastTurnText: currentTurnText,
-          cost: msg.total_cost_usd
+          lastTurnText,
+          cost: 'total_cost_usd' in msg ? msg.total_cost_usd : undefined
         })
-        return // Done — exit cleanly
+        return
       }
     }
 
     // Generator exhausted without a result message
-    emitToRenderer('claude:stream-end', { messageId, text: fullText || '' })
+    emitToRenderer('claude:stream-end', { messageId, text: assembledText || liveText || '' })
   } catch (err) {
     const errorMessage =
       err instanceof Error && err.name === 'AbortError'
