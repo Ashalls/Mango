@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Loader2, Trash2, StopCircle } from 'lucide-react'
+import { Send, Loader2, Trash2, StopCircle, History, MessageSquarePlus } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { useTabStore } from '@renderer/store/tabStore'
@@ -302,8 +302,9 @@ export function ClaudePanel() {
           </select>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
+            size="icon"
+            className="h-6 w-6"
+            title="Chat history"
             onClick={async () => {
               if (tab) {
                 const list = await trpc.chatHistory.list.query({ tabId: tab.id })
@@ -312,10 +313,10 @@ export function ClaudePanel() {
               }
             }}
           >
-            History
+            <History className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={startNewChat}>
-            New Chat
+          <Button variant="ghost" size="icon" className="h-6 w-6" title="New chat" onClick={startNewChat}>
+            <MessageSquarePlus className="h-3.5 w-3.5" />
           </Button>
           <Button
             variant="ghost"
