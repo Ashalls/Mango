@@ -16,6 +16,7 @@ export interface ChatSession {
   id: string
   tabId: string
   messages: ChatMessage[]
+  sdkSessionId?: string
   createdAt: number
   updatedAt: number
 }
@@ -27,7 +28,8 @@ function ensureDir(): void {
 export function saveSession(
   tabId: string,
   sessionId: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  sdkSessionId?: string
 ): ChatSession {
   ensureDir()
   const filePath = join(CHAT_DIR, `${sessionId}.json`)
@@ -38,6 +40,7 @@ export function saveSession(
     id: sessionId,
     tabId,
     messages,
+    sdkSessionId: sdkSessionId ?? existing?.sdkSessionId,
     createdAt: existing?.createdAt ?? Date.now(),
     updatedAt: Date.now()
   }

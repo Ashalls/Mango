@@ -15,11 +15,12 @@ export const chatHistoryRouter = router({
             toolCalls: z.array(z.unknown()).optional(),
             timestamp: z.number()
           })
-        )
+        ),
+        sdkSessionId: z.string().optional()
       })
     )
     .mutation(({ input }) => {
-      return chatHistory.saveSession(input.tabId, input.sessionId, input.messages)
+      return chatHistory.saveSession(input.tabId, input.sessionId, input.messages, input.sdkSessionId)
     }),
 
   load: procedure

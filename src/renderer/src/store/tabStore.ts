@@ -32,6 +32,7 @@ export interface Tab {
   messages: ChatMessage[]
   isStreaming: boolean
   chatSessionId: string
+  sdkSessionId?: string
 }
 
 function createTab(connectionId: string, database: string, collection: string, isView: boolean = false): Tab {
@@ -57,7 +58,8 @@ function createTab(connectionId: string, database: string, collection: string, i
     selectedDocIds: [],
     messages: [],
     isStreaming: false,
-    chatSessionId: crypto.randomUUID()
+    chatSessionId: crypto.randomUUID(),
+    sdkSessionId: undefined
   }
 }
 
@@ -97,6 +99,7 @@ interface TabStore {
   setStreaming: (streaming: boolean) => void
   clearMessages: () => void
   startNewChat: () => void
+  setSdkSessionId: (sessionId: string) => void
 
   // Internal
   updateTab: (tabId: string, updates: Partial<Tab>) => void
@@ -177,7 +180,8 @@ export const useTabStore = create<TabStore>((set, get) => ({
       selectedDocIds: [],
       messages: [],
       isStreaming: false,
-      chatSessionId: crypto.randomUUID()
+      chatSessionId: crypto.randomUUID(),
+      sdkSessionId: undefined
     }
     set((state) => ({ tabs: [...state.tabs, tab], activeTabId: id }))
     get().saveTabs()
@@ -212,7 +216,8 @@ export const useTabStore = create<TabStore>((set, get) => ({
       selectedDocIds: [],
       messages: [],
       isStreaming: false,
-      chatSessionId: crypto.randomUUID()
+      chatSessionId: crypto.randomUUID(),
+      sdkSessionId: undefined
     }
     set((state) => ({ tabs: [...state.tabs, tab], activeTabId: id }))
     get().saveTabs()
@@ -388,7 +393,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
 
   clearMessages: () => {
     const tab = get().getActiveTab()
-    if (tab) get().updateTab(tab.id, { messages: [], isStreaming: false })
+    if (tab) get().updateTab(tab.id, { messages: [], isStreaming: false, sdkSessionId: undefined })
   },
 
   startNewChat: () => {
@@ -400,15 +405,22 @@ export const useTabStore = create<TabStore>((set, get) => ({
         .mutate({
           tabId: tab.id,
           sessionId: tab.chatSessionId,
-          messages: tab.messages
+          messages: tab.messages,
+          sdkSessionId: tab.sdkSessionId
         })
         .catch(() => {})
     }
     get().updateTab(tab.id, {
       messages: [],
       isStreaming: false,
-      chatSessionId: crypto.randomUUID()
+      chatSessionId: crypto.randomUUID(),
+      sdkSessionId: undefined
     })
+  },
+
+  setSdkSessionId: (sessionId) => {
+    const tab = get().getActiveTab()
+    if (tab) get().updateTab(tab.id, { sdkSessionId: sessionId })
   },
 
   // Persistence
