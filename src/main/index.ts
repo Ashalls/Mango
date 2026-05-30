@@ -6,6 +6,7 @@ import { createIPCHandler } from 'electron-trpc/main'
 import { appRouter } from './trpc/router'
 import * as mongoService from './services/mongodb'
 import * as claudeService from './services/claude'
+import * as claudeHealth from './services/claudeHealth'
 import * as macUpdater from './services/macUpdater'
 import { startMcpServer, stopMcpServer } from './mcp/server'
 import { setToolsMainWindow } from './mcp/tools'
@@ -270,6 +271,10 @@ app.whenReady().then(async () => {
   const mainWindow = createWindow()
   updateMainWindow = mainWindow
   claudeService.setMainWindow(mainWindow)
+  claudeHealth.onAvailabilityChange((a) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('claude:availability', a)
+  })
+  void claudeHealth.probe()
   setToolsMainWindow(mainWindow)
   createIPCHandler({ router: appRouter, windows: [mainWindow] })
 
@@ -358,6 +363,15 @@ ipcMain.handle('update:install', async () => {
 })
 
 ipcMain.handle('app:getVersion', () => app.getVersion())
+
+ipcMain.handle('shell:openExternal', async (_e, url: string) => {
+  try {
+    const u = new URL(url)
+    if (u.protocol === 'https:' || u.protocol === 'http:') await shell.openExternal(url)
+  } catch {
+    /* ignore malformed/blocked urls */
+  }
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
