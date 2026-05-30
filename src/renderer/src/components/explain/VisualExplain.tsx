@@ -13,6 +13,7 @@ import { Sparkles } from 'lucide-react'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useConnectionStore } from '@renderer/store/connectionStore'
+import { useClaudeStore } from '@renderer/store/claudeStore'
 import { trpc } from '@renderer/lib/trpc'
 import type { ExplainPlan, ExplainStageNode } from '@shared/types'
 
@@ -84,6 +85,7 @@ export function VisualExplain({ plan }: { plan: ExplainPlan }) {
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
   const activeTab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const profiles = useConnectionStore((s) => s.profiles)
+  const claudeReady = useClaudeStore((s) => s.availability.status === 'ready')
 
   const handleInterpretExplain = async () => {
     if (!activeTab?.database || !activeTab?.collection) return
@@ -154,15 +156,17 @@ export function VisualExplain({ plan }: { plan: ExplainPlan }) {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          <button
-            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-            onClick={handleInterpretExplain}
-            title="Ask Claude to read this plan and explain what's slow"
-            disabled={!activeTab?.database || !activeTab?.collection}
-          >
-            <Sparkles className="h-3 w-3" />
-            Explain with Claude
-          </button>
+          <span title={claudeReady ? undefined : 'Set up Claude to enable AI features'}>
+            <button
+              className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              onClick={handleInterpretExplain}
+              title={claudeReady ? "Ask Claude to read this plan and explain what's slow" : undefined}
+              disabled={!claudeReady || !activeTab?.database || !activeTab?.collection}
+            >
+              <Sparkles className="h-3 w-3" />
+              Explain with Claude
+            </button>
+          </span>
           <button
             className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
               showRawJson
