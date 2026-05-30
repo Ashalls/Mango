@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
 import { safeStorage } from 'electron'
-import { CONFIG_DIR, CONNECTIONS_FILE, FOLDERS_FILE, SETTINGS_FILE } from '../constants'
+import { CONFIG_DIR, CONNECTIONS_FILE, FOLDERS_FILE, SETTINGS_FILE, CLAUDE_SECRET_FILE } from '../constants'
 import type { ConnectionFolder, ConnectionProfile } from '@shared/types'
 
 function ensureConfigDir(): void {
@@ -108,4 +108,40 @@ export function loadFolders(): ConnectionFolder[] {
 export function saveFolders(folders: ConnectionFolder[]): void {
   ensureConfigDir()
   writeFileSync(FOLDERS_FILE, JSON.stringify(folders, null, 2))
+}
+
+export function hasClaudeApiKey(): boolean {
+  ensureConfigDir()
+  return existsSync(CLAUDE_SECRET_FILE)
+}
+
+export function loadClaudeApiKey(): string | null {
+  ensureConfigDir()
+  if (!existsSync(CLAUDE_SECRET_FILE)) return null
+  try {
+    const data = JSON.parse(readFileSync(CLAUDE_SECRET_FILE, 'utf-8')) as { apiKey?: string }
+    if (!data.apiKey) return null
+    if (data.apiKey.startsWith('encrypted:')) {
+      if (!isEncryptionAvailable()) return null
+      return safeStorage.decryptString(Buffer.from(data.apiKey.slice(10), 'base64'))
+    }
+    return data.apiKey
+  } catch (err) {
+    console.error('Failed to load Claude API key:', err)
+    return null
+  }
+}
+
+export function saveClaudeApiKey(key: string): { ok: boolean; reason?: string } {
+  ensureConfigDir()
+  const trimmed = key.trim()
+  if (!trimmed) return { ok: false, reason: 'empty' }
+  if (!isEncryptionAvailable()) return { ok: false, reason: 'encryption-unavailable' }
+  const enc = 'encrypted:' + safeStorage.encryptString(trimmed).toString('base64')
+  writeFileSync(CLAUDE_SECRET_FILE, JSON.stringify({ apiKey: enc }, null, 2))
+  return { ok: true }
+}
+
+export function clearClaudeApiKey(): void {
+  if (existsSync(CLAUDE_SECRET_FILE)) rmSync(CLAUDE_SECRET_FILE)
 }
