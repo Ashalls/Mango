@@ -29,6 +29,7 @@ export function ClaudePanel() {
 
   const claudeModel = useSettingsStore((s) => s.claudeModel)
   const setClaudeModel = useSettingsStore((s) => s.setClaudeModel)
+  const claudeAuthMethod = useSettingsStore((s) => s.claudeAuthMethod)
   const claudeStatus = useClaudeStore((s) => s.availability.status)
 
   const messages = tab?.messages ?? []
@@ -308,7 +309,7 @@ export function ClaudePanel() {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {chatCost > 0 && (
+          {claudeAuthMethod === 'apiKey' && chatCost > 0 && (
             <span className="shrink-0 text-[10px] text-muted-foreground" title="Total cost of this chat">
               ${chatCost.toFixed(4)}
             </span>

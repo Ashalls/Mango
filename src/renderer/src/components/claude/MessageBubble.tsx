@@ -1,5 +1,6 @@
 import Markdown from 'react-markdown'
 import { cn } from '@renderer/lib/utils'
+import { useSettingsStore } from '@renderer/store/settingsStore'
 import type { ChatMessage } from '@shared/types'
 
 function modelLabel(model: string): string {
@@ -15,6 +16,7 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
+  const claudeAuthMethod = useSettingsStore((s) => s.claudeAuthMethod)
 
   if (!isUser && !message.content) return null
 
@@ -65,7 +67,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <div className="mt-1.5 border-t border-border/40 pt-1 text-[10px] text-muted-foreground">
             {modelLabel(message.usage.model)} · {message.usage.inputTokens.toLocaleString()} in /{' '}
             {message.usage.outputTokens.toLocaleString()} out
-            {message.usage.costUsd ? ` · $${message.usage.costUsd.toFixed(4)}` : ''}
+            {claudeAuthMethod === 'apiKey' && message.usage.costUsd ? ` · $${message.usage.costUsd.toFixed(4)}` : ''}
           </div>
         )}
       </div>
