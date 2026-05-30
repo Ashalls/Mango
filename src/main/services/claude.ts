@@ -3,43 +3,51 @@ import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
 import { join } from 'path'
 import { DEFAULT_MCP_PORT } from '@shared/constants'
+import type { ClaudeAuthMethod } from '@shared/types'
 import * as configService from './config'
 import * as mongoService from './mongodb'
 import { scanCodebase, formatContext } from './codebaseContext'
 import { getMcpToken } from '../mcp/server'
 
 /**
- * In packaged builds the SDK's cli.js is inside app.asar.unpacked so that
- * the spawned node child process can actually read it.
+ * Executable + env wiring shared by sendMessage and the availability probe.
+ * - Packaged builds run the asar-unpacked cli.js via Electron-as-node.
+ * - On the apiKey method we inject the stored ANTHROPIC_API_KEY.
+ * - On the subscription method we STRIP ambient ANTHROPIC_API_KEY/AUTH_TOKEN so a
+ *   key in the user's shell can't silently cause metered billing.
  */
-function getClaudeExecutablePath(): string | undefined {
-  if (!app.isPackaged) return undefined // let SDK resolve in dev
-  return join(
-    process.resourcesPath,
-    'app.asar.unpacked',
-    'node_modules',
-    '@anthropic-ai',
-    'claude-agent-sdk',
-    'cli.js'
-  )
-}
-
-/**
- * In a packaged Electron app launched from Finder, PATH is limited to
- * /usr/bin:/bin:/usr/sbin:/sbin and the SDK's default `spawn("node", ...)`
- * fails with ENOENT. Re-route the spawn to Electron itself running as
- * Node — ELECTRON_RUN_AS_NODE=1 makes the Electron binary behave like
- * node when launched with a JS file argument.
- */
-function getSpawnOverrides(): {
+export function buildSdkSpawnOptions(): {
+  pathToClaudeCodeExecutable?: string
   executable?: 'node' | 'bun' | 'deno'
   env?: NodeJS.ProcessEnv
 } {
-  if (!app.isPackaged) return {}
-  return {
-    executable: process.execPath as 'node',
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+  const method: ClaudeAuthMethod =
+    configService.loadSettings().claudeAuthMethod === 'apiKey' ? 'apiKey' : 'subscription'
+  const env: NodeJS.ProcessEnv = { ...process.env }
+
+  if (method === 'apiKey') {
+    const key = configService.loadClaudeApiKey()
+    if (key) env.ANTHROPIC_API_KEY = key
+  } else {
+    delete env.ANTHROPIC_API_KEY
+    delete env.ANTHROPIC_AUTH_TOKEN
   }
+
+  const opts: { pathToClaudeCodeExecutable?: string; executable?: 'node' | 'bun' | 'deno'; env: NodeJS.ProcessEnv } = { env }
+  if (app.isPackaged) {
+    opts.pathToClaudeCodeExecutable = join(
+      process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
+    )
+    opts.executable = process.execPath as 'node'
+    env.ELECTRON_RUN_AS_NODE = '1'
+  }
+  return opts
+}
+
+/** 'auto' -> Haiku on the apiKey path (cheap), Sonnet on subscription. */
+export function resolveModel(requested: string | undefined, method: ClaudeAuthMethod): string {
+  if (requested && requested !== 'auto') return requested
+  return method === 'apiKey' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6'
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -198,6 +206,14 @@ export async function sendMessage(
   }
   activeAbortController = new AbortController()
 
+  const settings = configService.loadSettings()
+  const method: ClaudeAuthMethod = settings.claudeAuthMethod === 'apiKey' ? 'apiKey' : 'subscription'
+  const model = resolveModel(opts.model, method)
+  const maxBudgetUsd =
+    method === 'apiKey' && typeof settings.claudeMaxBudgetUsd === 'number' && settings.claudeMaxBudgetUsd > 0
+      ? settings.claudeMaxBudgetUsd
+      : null
+
   const messageId = crypto.randomUUID()
 
   emitToRenderer('claude:stream-start', { messageId })
@@ -207,10 +223,10 @@ export async function sendMessage(
     const q = claudeQuery({
       prompt: message,
       options: {
-        pathToClaudeCodeExecutable: getClaudeExecutablePath(),
-        ...getSpawnOverrides(),
+        ...buildSdkSpawnOptions(),
         systemPrompt: buildSystemPrompt(context),
-        model: opts.model || 'claude-sonnet-4-6',
+        model,
+        ...(maxBudgetUsd != null ? { maxBudgetUsd } : {}),
         resume: opts.resumeSessionId,
         persistSession: true,
         includePartialMessages: true,
@@ -327,11 +343,20 @@ export async function sendMessage(
         const resultText =
           'result' in msg ? (msg as { result?: string }).result ?? '' : ''
         const finalText = assembledText || liveText || resultText
+        const u = (msg as { usage?: { input_tokens?: number; output_tokens?: number } }).usage
         emitToRenderer('claude:stream-end', {
           messageId,
           text: finalText,
           lastTurnText,
-          cost: 'total_cost_usd' in msg ? msg.total_cost_usd : undefined
+          cost: 'total_cost_usd' in msg ? msg.total_cost_usd : undefined,
+          usage: u
+            ? {
+                model,
+                inputTokens: u.input_tokens ?? 0,
+                outputTokens: u.output_tokens ?? 0,
+                costUsd: 'total_cost_usd' in msg ? (msg as { total_cost_usd?: number }).total_cost_usd : undefined
+              }
+            : undefined
         })
         return
       }
