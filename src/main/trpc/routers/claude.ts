@@ -1,5 +1,7 @@
 import { router, procedure, z } from '../context'
 import * as claudeService from '../../services/claude'
+import * as claudeHealth from '../../services/claudeHealth'
+import * as configService from '../../services/config'
 
 const ContextSchema = z.object({
   connectionName: z.string().optional(),
@@ -25,6 +27,9 @@ export const claudeRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      if (claudeHealth.getAvailability().status !== 'ready') {
+        return { started: false, reason: 'claude-unavailable' }
+      }
       claudeService.sendMessage(input.message, input.context, input.mcpPort, {
         model: input.model,
         resumeSessionId: input.resumeSessionId,
@@ -38,6 +43,27 @@ export const claudeRouter = router({
     return { aborted: true }
   }),
 
+  availability: procedure.query(() => claudeHealth.getAvailability()),
+
+  recheck: procedure.mutation(async () => claudeHealth.probe()),
+
+  hasApiKey: procedure.query(() => configService.hasClaudeApiKey()),
+
+  setApiKey: procedure
+    .input(z.object({ key: z.string() }))
+    .mutation(async ({ input }) => {
+      const res = configService.saveClaudeApiKey(input.key)
+      if (!res.ok) return { ok: false, reason: res.reason, availability: claudeHealth.getAvailability() }
+      const availability = await claudeHealth.probe()
+      return { ok: true, availability }
+    }),
+
+  clearApiKey: procedure.mutation(async () => {
+    configService.clearClaudeApiKey()
+    const availability = await claudeHealth.probe()
+    return { ok: true, availability }
+  }),
+
   /**
    * Feature 19 — one-click "Recommend indexes". Builds a constrained prompt
    * that asks Claude to use the MCP tools to: read profiler slow queries,
@@ -49,6 +75,9 @@ export const claudeRouter = router({
     .mutation(async ({ input }) => {
       const { database, collection } = input.context
       if (!database || !collection) throw new Error('database + collection required')
+      if (claudeHealth.getAvailability().status !== 'ready') {
+        return { started: false, reason: 'claude-unavailable' }
+      }
       const prompt = [
         `Analyse the ${database}.${collection} collection and recommend indexes.`,
         '',
@@ -88,6 +117,9 @@ export const claudeRouter = router({
     .mutation(async ({ input }) => {
       const { database, collection } = input.context
       if (!database || !collection) throw new Error('database + collection required')
+      if (claudeHealth.getAvailability().status !== 'ready') {
+        return { started: false, reason: 'claude-unavailable' }
+      }
       const queryKind = input.pipeline?.length ? 'aggregation pipeline' : 'find query'
       const queryJson = JSON.stringify(input.pipeline ?? input.filter ?? {}, null, 2)
       const prompt = [
