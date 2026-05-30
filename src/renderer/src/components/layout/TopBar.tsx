@@ -210,7 +210,7 @@ export function TopBar() {
                       )}
                       onClick={async () => {
                         if (claudeAuthMethod !== value) {
-                          setClaudeAuthMethod(value)
+                          await setClaudeAuthMethod(value)
                           setAvailability(await trpc.claude.recheck.mutate())
                         }
                       }}

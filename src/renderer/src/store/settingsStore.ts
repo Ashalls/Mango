@@ -30,7 +30,7 @@ interface SettingsStore {
   setCatSounds: (enabled: boolean) => void
   setDocumentSplitRatio: (ratio: number, persist?: boolean) => void
   setClaudeModel: (model: ClaudeModel) => void
-  setClaudeAuthMethod: (method: ClaudeAuthMethod) => void
+  setClaudeAuthMethod: (method: ClaudeAuthMethod) => Promise<void>
   setClaudeMaxBudgetUsd: (usd: number | null) => void
   loadFromSettings: () => Promise<void>
   getEffectiveTheme: () => 'light' | 'dark'
@@ -81,9 +81,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     trpc.settings.set.mutate({ key: 'claudeModel', value: model }).catch(() => {})
   },
 
-  setClaudeAuthMethod: (method) => {
+  setClaudeAuthMethod: async (method) => {
     set({ claudeAuthMethod: method })
-    trpc.settings.set.mutate({ key: 'claudeAuthMethod', value: method }).catch(() => {})
+    // Await persistence so a subsequent re-probe (which reads the method back
+    // from disk in the main process) never races a stale value.
+    await trpc.settings.set.mutate({ key: 'claudeAuthMethod', value: method }).catch(() => {})
   },
 
   setClaudeMaxBudgetUsd: (usd) => {

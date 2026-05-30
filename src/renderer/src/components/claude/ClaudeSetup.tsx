@@ -45,7 +45,7 @@ export function ClaudeSetup() {
 
   const switchMethod = async (m: ClaudeAuthMethod) => {
     if (m === authMethod) return
-    setAuthMethod(m)
+    await setAuthMethod(m)
     await recheck()
   }
 
