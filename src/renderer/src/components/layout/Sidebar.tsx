@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, ClipboardPaste, Pencil, Trash2, Database, Bot, MessageSquare, Upload, FolderClosed, FolderOpen, FolderPlus } from 'lucide-react'
+import { Plus, RefreshCw, Plug, PlugZap, ShieldAlert, ClipboardPaste, Pencil, Trash2, Database, Bot, MessageSquare, Upload, FolderClosed, FolderOpen, FolderPlus, ChevronRight } from 'lucide-react'
 import { PasteDatabaseDialog, type PasteDatabaseResult } from '@renderer/components/explorer/PasteDatabaseDialog'
 import { PasteCollectionDialog, type PasteCollectionResult } from '@renderer/components/explorer/PasteCollectionDialog'
 import * as ContextMenu from '@radix-ui/react-context-menu'
@@ -14,6 +14,7 @@ import { useExplorerStore } from '@renderer/store/explorerStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { trpc } from '@renderer/lib/trpc'
 import type { ConnectionProfile } from '@shared/types'
+import { cn } from '@renderer/lib/utils'
 
 export function Sidebar() {
   const [version, setVersion] = useState('')
@@ -40,6 +41,7 @@ export function Sidebar() {
 
   // Folder state
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [collapsedConnections, setCollapsedConnections] = useState<Set<string>>(new Set())
   const [newFolderName, setNewFolderName] = useState<string | null>(null)
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
   const [renamingFolderName, setRenamingFolderName] = useState('')
@@ -236,6 +238,7 @@ export function Sidebar() {
   const renderConnection = (profile: ConnectionProfile) => {
     const isThisConnected = connectedIds.includes(profile.id)
     const isThisActive = activeConnection?.profileId === profile.id
+    const isCollapsed = collapsedConnections.has(profile.id)
 
     return (
       <ContextMenu.Root key={profile.id}>
@@ -247,13 +250,38 @@ export function Sidebar() {
                 isThisActive ? 'bg-sidebar-accent' : ''
               }`}
               onClick={() => {
-                if (isThisConnected) {
-                  setActive(profile.id)
-                } else {
+                if (!isThisConnected) {
                   connect(profile.id)
+                  return
                 }
+                if (!isThisActive) {
+                  setActive(profile.id)
+                  setCollapsedConnections((prev) => {
+                    const next = new Set(prev)
+                    next.delete(profile.id)
+                    return next
+                  })
+                  return
+                }
+                // connected + active → toggle collapse of its tree
+                setCollapsedConnections((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(profile.id)) next.delete(profile.id)
+                  else next.add(profile.id)
+                  return next
+                })
               }}
             >
+              {isThisConnected ? (
+                <ChevronRight
+                  className={cn(
+                    'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                    isThisActive && !isCollapsed && 'rotate-90'
+                  )}
+                />
+              ) : (
+                <span className="h-3.5 w-3.5 shrink-0" />
+              )}
               {isThisConnected ? (
                 <PlugZap className="h-3.5 w-3.5 text-emerald-400" />
               ) : (
@@ -273,7 +301,7 @@ export function Sidebar() {
             </button>
 
             {/* Show database tree if this is the active connection */}
-            {isThisActive && isConnected && (
+            {isThisActive && isConnected && !isCollapsed && (
               <div className="ml-2">
                 <DatabaseTree
                   databases={databases}
