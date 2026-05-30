@@ -23,12 +23,14 @@ interface SettingsStore {
   loaded: boolean
   catSounds: boolean
   documentSplitRatio: number
+  sidebarWidth: number
   claudeModel: ClaudeModel
   claudeAuthMethod: ClaudeAuthMethod
   claudeMaxBudgetUsd: number | null
   setTheme: (theme: Theme) => void
   setCatSounds: (enabled: boolean) => void
   setDocumentSplitRatio: (ratio: number, persist?: boolean) => void
+  setSidebarWidth: (width: number, persist?: boolean) => void
   setClaudeModel: (model: ClaudeModel) => void
   setClaudeAuthMethod: (method: ClaudeAuthMethod) => Promise<void>
   setClaudeMaxBudgetUsd: (usd: number | null) => void
@@ -54,6 +56,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   loaded: false,
   catSounds: true,
   documentSplitRatio: 0.5,
+  sidebarWidth: 256,
   claudeModel: 'auto',
   claudeAuthMethod: 'subscription',
   claudeMaxBudgetUsd: null,
@@ -76,6 +79,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
   },
 
+  // Persist only on drag-end (persist=true) to avoid a settings write per pointermove.
+  setSidebarWidth: (width, persist = false) => {
+    set({ sidebarWidth: width })
+    if (persist) {
+      trpc.settings.set.mutate({ key: 'sidebarWidth', value: width }).catch(() => {})
+    }
+  },
+
   setClaudeModel: (model) => {
     set({ claudeModel: model })
     trpc.settings.set.mutate({ key: 'claudeModel', value: model }).catch(() => {})
@@ -95,10 +106,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   loadFromSettings: async () => {
     try {
-      const [savedTheme, savedCatSounds, savedSplit, savedModel, savedAuthMethod, savedBudget] = await Promise.all([
+      const [savedTheme, savedCatSounds, savedSplit, savedSidebarWidth, savedModel, savedAuthMethod, savedBudget] = await Promise.all([
         trpc.settings.get.query({ key: 'theme' }) as Promise<Theme | null>,
         trpc.settings.get.query({ key: 'catSounds' }) as Promise<boolean | null>,
         trpc.settings.get.query({ key: 'documentSplitRatio' }) as Promise<number | null>,
+        trpc.settings.get.query({ key: 'sidebarWidth' }) as Promise<number | null>,
         trpc.settings.get.query({ key: 'claudeModel' }) as Promise<ClaudeModel | null>,
         trpc.settings.get.query({ key: 'claudeAuthMethod' }) as Promise<ClaudeAuthMethod | null>,
         trpc.settings.get.query({ key: 'claudeMaxBudgetUsd' }) as Promise<number | null>
@@ -112,6 +124,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
       if (typeof savedSplit === 'number' && savedSplit > 0 && savedSplit < 1) {
         set({ documentSplitRatio: savedSplit })
+      }
+      if (typeof savedSidebarWidth === 'number' && savedSidebarWidth >= 180 && savedSidebarWidth <= 600) {
+        set({ sidebarWidth: savedSidebarWidth })
       }
       if (savedModel && CLAUDE_MODELS.some((m) => m.value === savedModel)) {
         set({ claudeModel: savedModel })

@@ -166,6 +166,7 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
   const [pageInput, setPageInput] = useState('')
   const pageInputRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<AgGridReact>(null)
+  const gridWrapperRef = useRef<HTMLDivElement>(null)
 
   // When the document-editor pop-out closes (popoutExpanded: true -> false),
   // ag-grid can leave its rows stuck at 0px height — only a re-render re-lays
@@ -179,6 +180,47 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     })
     return () => cancelAnimationFrame(raf)
   }, [popoutExpanded])
+
+  // Canary + self-heal for the long-standing "table goes blank until you
+  // right-click" bug. ag-grid has no fallback height: it renders entirely
+  // against this wrapper's resolved size and only re-measures on a size-change
+  // event. If a reflow ever collapses the wrapper to 0px while documents are
+  // loaded, the grid shows nothing until something forces a re-measure (which a
+  // right-click incidentally did, via the context menu's body scroll-lock).
+  // Observe the wrapper directly so that (a) any collapse is LOUD in the console
+  // instead of a silent blank, and (b) the moment height returns we force
+  // ag-grid to re-lay-out, in case it latched on an empty viewport. The grid is
+  // also now absolutely positioned (see below), so a hard collapse should no
+  // longer be reachable — this is belt-and-braces, and our regression alarm.
+  useEffect(() => {
+    const el = gridWrapperRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let prevHeight = el.clientHeight
+    const observer = new ResizeObserver(() => {
+      const s = useTabStore.getState()
+      const liveTab = s.tabs.find((t) => t.id === s.activeTabId)
+      const docCount = liveTab?.results?.documents?.length ?? 0
+      const height = el.clientHeight
+      const width = el.clientWidth
+      if (width > 0 && height === 0 && docCount > 0) {
+        console.warn(
+          `[DocumentTable] grid wrapper collapsed to 0px height (width=${width}px) ` +
+            `with ${docCount} docs loaded — ag-grid will be blank until a re-measure. ` +
+            `This is the "disappearing table" regression; check the height cascade.`
+        )
+      }
+      if (prevHeight === 0 && height > 0) {
+        const api = gridRef.current?.api
+        if (api) {
+          api.resetRowHeights()
+          if (api.getDisplayedRowCount() === 0 && docCount > 0) api.redrawRows()
+        }
+      }
+      prevHeight = height
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [viewMode])
 
   if (!tab) return null
 
@@ -460,14 +502,20 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
           </Button>
         </div>
       </div>
-      {/* Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Content. `relative` anchors the absolutely-positioned grid below. */}
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         {viewMode === 'tree' ? (
           <TreeView />
         ) : viewMode === 'table' ? (
           <ContextMenu.Root>
-            <ContextMenu.Trigger className="h-full w-full" asChild>
-              <div className="h-full">
+            <ContextMenu.Trigger asChild>
+              {/* absolute inset-0 derives the grid's height by pinning to this
+                  relative parent's resolved box, instead of a height:100% chain
+                  through flex-basis:0 items. Absolute boxes are re-laid-out
+                  reliably on reflow and do NOT suffer Chromium's "percentage
+                  height of a flex-grown item collapses to 0 and sticks" bug —
+                  which is the failure mode that made the table vanish. */}
+              <div ref={gridWrapperRef} className="absolute inset-0">
                 <AgGridReact
                   ref={gridRef}
                   theme={effectiveTheme === 'dark' ? gridDarkTheme : gridLightTheme}

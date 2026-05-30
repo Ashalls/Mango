@@ -161,7 +161,11 @@ export function MainPanel() {
 
               {subTab === 'documents' ? (
                 <>
-                  <QueryBuilder />
+                  {/* key per tab: QueryBuilder keeps its filter-builder rows in
+                      local state, so without a per-tab key the previous tab's
+                      filter visually leaks onto the next collection. Remounting
+                      per tab isolates each tab's filter UI. */}
+                  <QueryBuilder key={activeTab.id} />
                   <BulkToolbar />
                   {viewMode === 'table' && activeTab.selectedDocument ? (
                     <div ref={splitRef} className="flex flex-1 min-h-0 flex-col">

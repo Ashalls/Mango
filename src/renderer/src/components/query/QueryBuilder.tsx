@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Plus,
   X,
@@ -15,19 +15,7 @@ import { ProjectionBuilder } from './ProjectionBuilder'
 import { QueryFooter } from './QueryFooter'
 import { QueryHistoryPanel } from './QueryHistoryPanel'
 import { CodeGenModal } from '@renderer/components/codegen/CodeGenModal'
-
-// --- Types ---
-
-interface FilterRow {
-  id: string
-  field: string
-  operator: string
-  value: string
-  type: FieldType
-}
-
-type FieldType = 'String' | 'Number' | 'Boolean' | 'Date' | 'ObjectId' | 'Auto'
-type MatchMode = '$and' | '$or'
+import type { FieldType, MatchMode, FilterRow, FilterBuilderState } from './filterTypes'
 
 // --- Operators per type ---
 
@@ -177,18 +165,42 @@ function inferFieldType(values: unknown[]): FieldType {
 // --- Component ---
 
 export function QueryBuilder() {
-  const [rows, setRows] = useState<FilterRow[]>([])
-  const [matchMode, setMatchMode] = useState<MatchMode>('$and')
-  const [rawMode, setRawMode] = useState(false)
-  const [rawJson, setRawJson] = useState('{}')
-  const [expanded, setExpanded] = useState(false)
+  const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
+  const { setFilter, setPage, executeQuery } = useTabStore()
+  const loading = tab?.loading ?? false
+
+  // This component is keyed per tab (see MainPanel), so these initializers run
+  // fresh for each tab. Restore the tab's saved builder snapshot if it has one
+  // (so the exact VISUAL rows come back on revisit); otherwise seed from the
+  // tab's stored filter as JSON; otherwise start empty. Per-tab state is what
+  // keeps one tab's filter from appearing on another.
+  const saved = tab?.filterBuilder ?? null
+  const hasInitialFilter = !!tab && Object.keys(tab.filter).length > 0
+  const [rows, setRows] = useState<FilterRow[]>(() => saved?.rows ?? [])
+  const [matchMode, setMatchMode] = useState<MatchMode>(saved?.matchMode ?? '$and')
+  const [rawMode, setRawMode] = useState(saved?.rawMode ?? hasInitialFilter)
+  const [rawJson, setRawJson] = useState(() =>
+    saved?.rawJson ?? (hasInitialFilter ? JSON.stringify(tab!.filter, null, 2) : '{}')
+  )
+  const [expanded, setExpanded] = useState(saved?.expanded ?? hasInitialFilter)
   const [sortExpanded, setSortExpanded] = useState(false)
   const [projExpanded, setProjExpanded] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [codegenOpen, setCodegenOpen] = useState(false)
-  const tab = useTabStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
-  const { setFilter, setPage, executeQuery } = useTabStore()
-  const loading = tab?.loading ?? false
+
+  // Persist the builder snapshot back to this tab when we unmount (i.e. on tab
+  // switch — the component is keyed per tab). A ref tracks the latest committed
+  // state so the cleanup saves what's actually on screen, without writing to the
+  // store on every keystroke (which would needlessly re-render the grid).
+  const snapshotRef = useRef<FilterBuilderState>({ rows, matchMode, rawMode, rawJson, expanded })
+  snapshotRef.current = { rows, matchMode, rawMode, rawJson, expanded }
+  const snapshotTabId = tab?.id
+  useEffect(() => {
+    if (!snapshotTabId) return
+    return () => {
+      useTabStore.getState().updateTab(snapshotTabId, { filterBuilder: snapshotRef.current })
+    }
+  }, [snapshotTabId])
 
   // Collect available fields from current result set
   const availableFields = useMemo(() => {

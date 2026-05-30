@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { QueryResult, ChatMessage } from '@shared/types'
+import type { FilterBuilderState } from '@renderer/components/query/filterTypes'
 import { DEFAULT_PAGE_SIZE } from '@shared/constants'
 import { trpc } from '@renderer/lib/trpc'
 
@@ -14,6 +15,9 @@ export interface Tab {
 
   // Query state
   filter: Record<string, unknown>
+  // Snapshot of the QueryBuilder UI for this tab, so its visual filter rows are
+  // restored on revisit (null until the builder first persists one).
+  filterBuilder: FilterBuilderState | null
   projection: Record<string, number> | null
   sort: Record<string, number> | null
   page: number
@@ -45,6 +49,7 @@ function createTab(connectionId: string, database: string, collection: string, i
     isView,
     scope: 'collection',
     filter: {},
+    filterBuilder: null,
     projection: null,
     sort: null,
     page: 0,
