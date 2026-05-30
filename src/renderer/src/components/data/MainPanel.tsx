@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useSettingsStore } from '@renderer/store/settingsStore'
 import { useTabStore } from '@renderer/store/tabStore'
 import { TabBar } from '@renderer/components/layout/TabBar'
 import { QueryBuilder } from '@renderer/components/query/QueryBuilder'
@@ -19,6 +20,29 @@ export function MainPanel() {
   const [subTab, setSubTab] = useState<'documents' | 'aggregation' | 'explain' | 'indexes' | 'validation'>('documents')
   const [viewMode, setViewMode] = useState<'table' | 'tree' | 'json'>('table')
   const [explainPlan, setExplainPlan] = useState<ExplainPlan | null>(null)
+
+  const splitRef = useRef<HTMLDivElement>(null)
+  const documentSplitRatio = useSettingsStore((s) => s.documentSplitRatio)
+  const setDocumentSplitRatio = useSettingsStore((s) => s.setDocumentSplitRatio)
+
+  const startSplitDrag = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const onMove = (ev: PointerEvent) => {
+      const el = splitRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      let ratio = (ev.clientY - rect.top) / rect.height
+      ratio = Math.min(0.85, Math.max(0.15, ratio))
+      setDocumentSplitRatio(ratio)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      setDocumentSplitRatio(useSettingsStore.getState().documentSplitRatio, true)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   const runExplain = async () => {
     if (!activeTab) return
@@ -128,12 +152,23 @@ export function MainPanel() {
                 <>
                   <QueryBuilder />
                   <BulkToolbar />
-                  <div className={viewMode === 'table' && activeTab.selectedDocument ? 'h-1/2 min-h-0' : 'flex-1 min-h-0'}>
-                    <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
-                  </div>
-                  {viewMode === 'table' && activeTab.selectedDocument && (
-                    <div className="h-1/2 min-h-0">
-                      <DocumentEditor />
+                  {viewMode === 'table' && activeTab.selectedDocument ? (
+                    <div ref={splitRef} className="flex flex-1 min-h-0 flex-col">
+                      <div className="min-h-0" style={{ flexGrow: documentSplitRatio, flexBasis: 0 }}>
+                        <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
+                      </div>
+                      <div
+                        className="h-1.5 shrink-0 cursor-row-resize bg-border transition-colors hover:bg-emerald-500/50"
+                        onPointerDown={startSplitDrag}
+                        title="Drag to resize"
+                      />
+                      <div className="min-h-0" style={{ flexGrow: 1 - documentSplitRatio, flexBasis: 0 }}>
+                        <DocumentEditor />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 min-h-0">
+                      <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
                     </div>
                   )}
                 </>

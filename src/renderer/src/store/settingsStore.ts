@@ -8,8 +8,10 @@ interface SettingsStore {
   effectiveTheme: 'light' | 'dark'
   loaded: boolean
   catSounds: boolean
+  documentSplitRatio: number
   setTheme: (theme: Theme) => void
   setCatSounds: (enabled: boolean) => void
+  setDocumentSplitRatio: (ratio: number, persist?: boolean) => void
   loadFromSettings: () => Promise<void>
   getEffectiveTheme: () => 'light' | 'dark'
 }
@@ -31,6 +33,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   effectiveTheme: 'dark',
   loaded: false,
   catSounds: true,
+  documentSplitRatio: 0.5,
 
   setTheme: (theme) => {
     applyTheme(theme)
@@ -43,11 +46,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     trpc.settings.set.mutate({ key: 'catSounds', value: enabled }).catch(() => {})
   },
 
+  setDocumentSplitRatio: (ratio, persist = false) => {
+    set({ documentSplitRatio: ratio })
+    if (persist) {
+      trpc.settings.set.mutate({ key: 'documentSplitRatio', value: ratio }).catch(() => {})
+    }
+  },
+
   loadFromSettings: async () => {
     try {
-      const [savedTheme, savedCatSounds] = await Promise.all([
+      const [savedTheme, savedCatSounds, savedSplit] = await Promise.all([
         trpc.settings.get.query({ key: 'theme' }) as Promise<Theme | null>,
-        trpc.settings.get.query({ key: 'catSounds' }) as Promise<boolean | null>
+        trpc.settings.get.query({ key: 'catSounds' }) as Promise<boolean | null>,
+        trpc.settings.get.query({ key: 'documentSplitRatio' }) as Promise<number | null>
       ])
       if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
         applyTheme(savedTheme)
@@ -55,6 +66,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
       if (savedCatSounds !== null && savedCatSounds !== undefined) {
         set({ catSounds: savedCatSounds })
+      }
+      if (typeof savedSplit === 'number' && savedSplit > 0 && savedSplit < 1) {
+        set({ documentSplitRatio: savedSplit })
       }
     } catch { /* tRPC not ready yet */ }
     applyTheme(get().theme)
