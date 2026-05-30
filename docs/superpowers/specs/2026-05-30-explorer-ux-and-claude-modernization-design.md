@@ -97,14 +97,14 @@ This mirrors the existing Explorer-header refresh button (`Sidebar.tsx:497-501`)
 
 ### SDK upgrade
 
-- Bump `@anthropic-ai/claude-agent-sdk` in `package.json` from `^0.1.0` to the current published version.
-- Re-verify the packaged-build path logic (`getClaudeExecutablePath`, `app.asar.unpacked`) and the `ELECTRON_RUN_AS_NODE` spawn override still hold for the new version.
+- **No package bump needed.** The `^0.1.0` range already resolves to the installed **0.1.77**, whose `Options` type natively provides every API this work uses: `model`, `resume`, `continue`, `includePartialMessages`, `canUseTool`, `persistSession` (default `true`; the current code's `false` is exactly what blocks resume), plus `fallbackModel`/`maxThinkingTokens`. Modernizing against the installed version avoids a risky dependency bump and leaves the packaged-build path logic (`getClaudeExecutablePath`, `app.asar.unpacked`, `ELECTRON_RUN_AS_NODE`) untouched.
+- *(Decided during planning after reading the installed SDK's `.d.ts` files — supersedes the earlier "bump to current published version" intent.)*
 
 ## Risks & verification
 
 - **Permissions regression is the top risk.** After switching off the bypass, explicitly verify: writes to a `[PRODUCTION]` connection are still blocked, `[READ-ONLY]` connections block all writes, and per-database `[claude:readwrite]` overrides still permit writes. The MCP-layer tests/paths must still fire.
 - **SDK API drift.** Confirm against the *installed* SDK version's TypeScript types (not changelog research): the exact `resume` option, where `session_id` appears, the partial-message event shape, and that `canUseTool` fires for HTTP-MCP tools. Pin these before relying on them.
-- **Packaged build.** The SDK bump can affect the asar-unpacked CLI path; verify a packaged build still launches Claude.
+- **Packaged build.** No SDK version change, so the asar-unpacked CLI path is unaffected; a `npm run build` smoke-check is still worthwhile but low-risk.
 - **Manual verification** (run the app): model switch takes effect; a two-message follow-up resolves correctly (memory works); drag-resize persists across restart; connection collapse/expand and the Refresh Databases item behave as specified.
 
 ## Out of scope
