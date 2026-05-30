@@ -6,6 +6,9 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { CatMode } from '@renderer/components/fun/CatMode'
+import { trpc } from '@renderer/lib/trpc'
+import { useClaudeStore } from '@renderer/store/claudeStore'
+import type { ClaudeAvailability } from '@shared/types'
 
 function App(): React.JSX.Element {
   useEffect(() => {
@@ -14,6 +17,17 @@ function App(): React.JSX.Element {
 
     // Auto-reconnect for restored tabs and execute their queries
     autoReconnectTabs()
+  }, [])
+
+  useEffect(() => {
+    const setAvailability = useClaudeStore.getState().setAvailability
+    trpc.claude.availability.query().then(setAvailability).catch(() => {})
+
+    const handler = (_: unknown, a: ClaudeAvailability) => setAvailability(a)
+    window.electron?.ipcRenderer.on('claude:availability', handler)
+    return () => {
+      window.electron?.ipcRenderer.removeListener('claude:availability', handler)
+    }
   }, [])
 
   return (
