@@ -101,7 +101,16 @@ Contributions are welcome! If you find a bug or have an idea, [open an issue](ht
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+Mango is **source-available** under the [Business Source License 1.1](LICENSE).
+
+In short: the source is open to read, modify, and use — including inside your
+organization for internal purposes — free of charge. What the license does
+**not** permit is offering Mango itself to third parties as a competing
+commercial or hosted product. Four years after each version is published, that
+version automatically converts to the Apache License 2.0.
+
+For commercial or alternative licensing arrangements, contact
+ashley@thepaynes.uk.
 
 ---
 
