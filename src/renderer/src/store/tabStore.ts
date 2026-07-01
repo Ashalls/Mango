@@ -93,6 +93,7 @@ interface TabStore {
   // Document actions
   selectDocument: (doc: Record<string, unknown> | null) => void
   setEditorContent: (content: string) => void
+  setEditorContentPristine: (content: string) => void
   clearDocument: () => void
 
   // Selection actions
@@ -362,6 +363,14 @@ export const useTabStore = create<TabStore>((set, get) => ({
   setEditorContent: (content) => {
     const tab = get().getActiveTab()
     if (tab) get().updateTab(tab.id, { editorContent: content, isDirty: true })
+  },
+
+  // Replace editor content without marking the tab dirty — used when the editor
+  // upgrades its plain-JSON view to server-rendered shell source (ObjectId(...),
+  // ISODate(...)) after a document is selected.
+  setEditorContentPristine: (content) => {
+    const tab = get().getActiveTab()
+    if (tab) get().updateTab(tab.id, { editorContent: content, isDirty: false })
   },
 
   clearDocument: () => {

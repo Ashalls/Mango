@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { trpc } from '@renderer/lib/trpc'
+import { parseShellDocument } from '@renderer/lib/shellJson'
 
 interface InsertDocumentsDialogProps {
   open: boolean
@@ -36,18 +37,20 @@ export function InsertDocumentsDialog({
 
     let documents: Record<string, unknown>[]
     try {
-      const parsed = JSON.parse(json)
+      // Accepts shell syntax (ObjectId("..."), ISODate("...")) as well as plain
+      // JSON; typed values are revived to real BSON on the server.
+      const parsed = parseShellDocument(json)
       if (!Array.isArray(parsed)) {
-        setError('JSON must be an array of documents')
+        setError('Input must be an array of documents')
         return
       }
       if (parsed.length === 0) {
         setError('Array must contain at least one document')
         return
       }
-      documents = parsed
-    } catch {
-      setError('Invalid JSON. Please check your syntax.')
+      documents = parsed as Record<string, unknown>[]
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid input. Please check your syntax.')
       return
     }
 

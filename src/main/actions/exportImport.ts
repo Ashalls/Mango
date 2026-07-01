@@ -7,7 +7,7 @@ import { join as pathJoin } from 'path'
 import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import * as configService from '../services/config'
-import { serializeDocuments, serializeDocument } from '../services/serialize'
+import { serializeDocuments, serializeDocument, serializeToEJSON, reviveExtended } from '../services/serialize'
 import type { OperationProgress } from '@shared/types'
 
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
@@ -914,7 +914,8 @@ export async function exportCollection(
       await write('[\n')
       let first = true
       for await (const raw of cursor) {
-        const doc = serializeDocument(raw as Record<string, unknown>)
+        // Lossless Extended JSON so re-import preserves ObjectId/Date/etc. types.
+        const doc = serializeToEJSON(raw as Record<string, unknown>)
         await write((first ? '' : ',\n') + JSON.stringify(doc, null, 2))
         first = false
         count++
@@ -922,7 +923,7 @@ export async function exportCollection(
       await write('\n]\n')
     } else if (format === 'ndjson') {
       for await (const raw of cursor) {
-        const doc = serializeDocument(raw as Record<string, unknown>)
+        const doc = serializeToEJSON(raw as Record<string, unknown>)
         await write(JSON.stringify(doc) + '\n')
         count++
       }
@@ -1226,7 +1227,9 @@ export async function importCollection(
 
   const cleaned = docs.map((doc) => {
     const { _id, ...rest } = doc
-    return rest
+    // Revive Extended-JSON markers so exported ObjectId/Date fields come back as
+    // real BSON rather than being re-inserted as strings/subdocuments.
+    return reviveExtended(rest) as Record<string, unknown>
   })
 
   const result = await db.collection(collection).insertMany(cleaned)

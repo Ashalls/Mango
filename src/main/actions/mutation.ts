@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
+import { reviveExtended } from '../services/serialize'
 
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
 function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
@@ -26,7 +27,8 @@ export async function insertOne(
   document: Record<string, unknown>
 ): Promise<{ insertedId: string }> {
   const db = mongoService.getDb(database)
-  const result = await db.collection(collection).insertOne(document)
+  const revived = reviveExtended(document) as Record<string, unknown>
+  const result = await db.collection(collection).insertOne(revived)
   return { insertedId: result.insertedId.toString() }
 }
 
@@ -39,9 +41,12 @@ export async function updateOne(
   const db = mongoService.getDb(database)
   const processedFilter = convertObjectIds(filter)
   // If update doesn't use operators, wrap in $set
-  const updateDoc = Object.keys(update).some((k) => k.startsWith('$'))
+  const wrapped = Object.keys(update).some((k) => k.startsWith('$'))
     ? update
     : { $set: update }
+  // Revive Extended-JSON markers ($oid/$date/...) the document editor emits so
+  // edited fields keep their BSON type instead of being written as strings.
+  const updateDoc = reviveExtended(wrapped) as Record<string, unknown>
   const result = await db.collection(collection).updateOne(processedFilter, updateDoc)
   return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount }
 }
@@ -72,7 +77,8 @@ export async function insertMany(
   documents: Record<string, unknown>[]
 ): Promise<{ insertedCount: number }> {
   const db = mongoService.getDb(database)
-  const result = await db.collection(collection).insertMany(documents)
+  const revived = documents.map((d) => reviveExtended(d) as Record<string, unknown>)
+  const result = await db.collection(collection).insertMany(revived)
   return { insertedCount: result.insertedCount }
 }
 
@@ -84,9 +90,10 @@ export async function updateMany(
 ): Promise<{ matchedCount: number; modifiedCount: number }> {
   const db = mongoService.getDb(database)
   const processedFilter = convertObjectIds(filter)
-  const updateDoc = Object.keys(update).some((k) => k.startsWith('$'))
+  const wrapped = Object.keys(update).some((k) => k.startsWith('$'))
     ? update
     : { $set: update }
+  const updateDoc = reviveExtended(wrapped) as Record<string, unknown>
   const result = await db.collection(collection).updateMany(processedFilter, updateDoc)
   return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount }
 }

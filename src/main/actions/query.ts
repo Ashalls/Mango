@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
-import { serializeDocuments } from '../services/serialize'
+import { serializeDocuments, serializeToShellSource } from '../services/serialize'
 import * as queryLog from '../services/queryLog'
 import { MAX_RESULT_SIZE, MAX_REGEX_PATTERN_LENGTH, REGEX_QUANTIFIER_DEPTH_LIMIT } from '@shared/constants'
 import type { QueryOptions, QueryResult } from '@shared/types'
@@ -44,6 +44,23 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
     }
   }
   return result
+}
+
+/**
+ * Fetch a single document by _id and render it as MongoDB shell text
+ * (ObjectId("..."), ISODate("..."), ...) for the document editor, so typed
+ * fields are shown and edited as their real BSON types. Returns null when the
+ * document no longer exists.
+ */
+export async function findOneSource(
+  database: string,
+  collection: string,
+  id: unknown
+): Promise<{ source: string | null }> {
+  const db = mongoService.getDb(database)
+  const filter = convertObjectIds({ _id: id } as Record<string, unknown>)
+  const doc = await db.collection(collection).findOne(filter)
+  return { source: doc ? serializeToShellSource(doc) : null }
 }
 
 export async function find(options: QueryOptions): Promise<QueryResult> {

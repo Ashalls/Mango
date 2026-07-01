@@ -21,6 +21,18 @@ export const queryRouter = router({
       return queryActions.find(input)
     }),
 
+  documentSource: procedure
+    .input(
+      z.object({
+        database: z.string(),
+        collection: z.string(),
+        id: z.unknown()
+      })
+    )
+    .query(async ({ input }) => {
+      return queryActions.findOneSource(input.database, input.collection, input.id)
+    }),
+
   count: procedure
     .input(
       z.object({

@@ -5,6 +5,7 @@ import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { trpc } from '@renderer/lib/trpc'
+import { parseShellDocument } from '@renderer/lib/shellJson'
 
 export function DocumentEditor({
   expanded,
@@ -19,6 +20,49 @@ export function DocumentEditor({
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Bumped after a save/discard to re-pull the document's shell source (its _id
+  // is unchanged, so this is what re-triggers the fetch effect below).
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  // Upgrade the editor from the plain-JSON snapshot (set synchronously on row
+  // click) to server-rendered shell source, so ObjectId/date fields show as
+  // ObjectId("...") / ISODate("...") and round-trip with their real BSON type.
+  // Falls back silently to the plain JSON already in the editor if the fetch
+  // fails. Keyed on a stringified _id so an object _id doesn't loop the effect.
+  const selectedId = tab?.selectedDocument?._id
+  const selectedIdKey =
+    selectedId === undefined || selectedId === null
+      ? null
+      : typeof selectedId === 'object'
+        ? JSON.stringify(selectedId)
+        : String(selectedId)
+  const database = tab?.database
+  const collection = tab?.collection
+  useEffect(() => {
+    if (selectedIdKey === null || !database || !collection) return
+    let cancelled = false
+    trpc.query.documentSource
+      .query({ database, collection, id: selectedId })
+      .then((res) => {
+        if (cancelled || !res?.source) return
+        const s = useTabStore.getState()
+        const live = s.tabs.find((t) => t.id === s.activeTabId)
+        // Only replace if the user hasn't started editing this same document.
+        const liveId = live?.selectedDocument?._id
+        const liveKey =
+          liveId === undefined || liveId === null
+            ? null
+            : typeof liveId === 'object'
+              ? JSON.stringify(liveId)
+              : String(liveId)
+        if (live && !live.isDirty && liveKey === selectedIdKey) {
+          s.setEditorContentPristine(res.source)
+        }
+      })
+      .catch(() => { /* keep plain-JSON fallback */ })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIdKey, database, collection, refreshTick])
 
   // Escape restores the docked editor when popped out. Content lives in the
   // tab store, so collapsing never loses edits.
@@ -40,8 +84,11 @@ export function DocumentEditor({
   }
 
   const handleDiscard = () => {
+    // Restore a pristine view synchronously (plain JSON), then let the effect
+    // upgrade it back to shell source.
     selectDocument(tab.selectedDocument)
     setError(null)
+    setRefreshTick((t) => t + 1)
   }
 
   const handleSave = async () => {
@@ -49,17 +96,23 @@ export function DocumentEditor({
     setError(null)
     setSaving(true)
     try {
-      const updated = JSON.parse(tab.editorContent)
+      // parseShellDocument accepts shell syntax (ObjectId(...), ISODate(...))
+      // as well as plain JSON, emitting Extended-JSON markers the main process
+      // revives into real BSON.
+      const updated = parseShellDocument(tab.editorContent) as Record<string, unknown>
       const docId = tab.selectedDocument!._id
-      if (!docId) { setError('Document has no _id field'); return }
-      const { _id, ...fields } = updated
+      if (docId === undefined || docId === null) { setError('Document has no _id field'); return }
+      const { _id: _ignoredId, ...fields } = updated
       await trpc.mutation.updateOne.mutate({
         database: tab.database,
         collection: tab.collection,
         filter: { _id: docId },
         update: { $set: fields }
       })
-      selectDocument(updated)
+      // Clear the dirty flag and re-pull the freshly-stored document as shell
+      // source (the fetch effect re-renders the editor with canonical types).
+      useTabStore.getState().updateTab(tab.id, { isDirty: false })
+      setRefreshTick((t) => t + 1)
       executeQuery()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
@@ -111,10 +164,19 @@ export function DocumentEditor({
       <div className="min-h-0 flex-1">
         <Editor
           height="100%"
-          defaultLanguage="json"
+          defaultLanguage="javascript"
           value={tab.editorContent}
           onChange={(value) => setEditorContent(value ?? '')}
           theme={effectiveTheme === 'dark' ? 'vs-dark' : 'light'}
+          beforeMount={(monaco) => {
+            // The editor shows MongoDB shell syntax (ObjectId("..."),
+            // ISODate("...")), which isn't valid JSON or plain JS — disable the
+            // TS/JS validators so those don't render as spurious error squiggles.
+            monaco.languages.typescript?.javascriptDefaults?.setDiagnosticsOptions({
+              noSemanticValidation: true,
+              noSyntaxValidation: true
+            })
+          }}
           options={{
             minimap: { enabled: false },
             fontSize: 13,

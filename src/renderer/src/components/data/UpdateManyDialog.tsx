@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { X, Search } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { trpc } from '@renderer/lib/trpc'
+import { parseShellDocument } from '@renderer/lib/shellJson'
 
 interface UpdateManyDialogProps {
   open: boolean
@@ -57,28 +58,28 @@ export function UpdateManyDialog({
 
   const parseFilter = (): Record<string, unknown> | null => {
     try {
-      const parsed = JSON.parse(filterJson || '{}')
-      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setError('Filter must be a JSON object')
+      const parsed = parseShellDocument(filterJson || '{}')
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setError('Filter must be an object')
         return null
       }
-      return parsed
-    } catch {
-      setError('Invalid filter JSON')
+      return parsed as Record<string, unknown>
+    } catch (err) {
+      setError(err instanceof Error ? `Invalid filter: ${err.message}` : 'Invalid filter')
       return null
     }
   }
 
   const parseUpdate = (): Record<string, unknown> | null => {
     try {
-      const parsed = JSON.parse(updateJson)
-      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setError('Update expression must be a JSON object')
+      const parsed = parseShellDocument(updateJson)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setError('Update expression must be an object')
         return null
       }
-      return parsed
-    } catch {
-      setError('Invalid update expression JSON')
+      return parsed as Record<string, unknown>
+    } catch (err) {
+      setError(err instanceof Error ? `Invalid update expression: ${err.message}` : 'Invalid update expression')
       return null
     }
   }
