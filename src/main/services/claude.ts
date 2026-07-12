@@ -29,8 +29,10 @@ export function buildSdkSpawnOptions(): {
   // Strip inherited env that would confuse the bundled Claude Code SDK. Detect a
   // NESTED Claude Code context (Mango launched from within another Claude Code
   // session, e.g. `npm run dev` from this harness) BEFORE mutating env.
-  const nestedClaudeCode =
-    !!env.CLAUDECODE || Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))
+  // `CLAUDECODE` is the definitive marker that we're running INSIDE another
+  // Claude Code session (broader CLAUDE_CODE_* config vars can be set on purpose,
+  // so they aren't proof of nesting). Read it before mutating env.
+  const nestedClaudeCode = !!env.CLAUDECODE
   // Mango picks the model via the SDK `model` option, so an inherited model
   // override is never wanted; nesting markers make the SDK act as a sub-agent.
   delete env.ANTHROPIC_MODEL
@@ -38,13 +40,16 @@ export function buildSdkSpawnOptions(): {
   for (const k of Object.keys(env)) {
     if (k.startsWith('CLAUDE_CODE_')) delete env[k]
   }
-  // Only strip a redirected base URL when it came from a nested Claude Code
-  // context (which points it at the harness's gateway and yields malformed
-  // server_tool_use requests). A user may legitimately export ANTHROPIC_BASE_URL
-  // to reach their own Anthropic-compatible proxy — respect that when not nested.
+  // Only strip a redirected base URL when we're nested (it points at the
+  // harness's gateway and yields malformed server_tool_use requests). A user may
+  // legitimately export ANTHROPIC_BASE_URL for their own Anthropic-compatible
+  // proxy — respect that when not nested.
   if (nestedClaudeCode) delete env.ANTHROPIC_BASE_URL
 
   if (method === 'apiKey') {
+    // Drop any inherited bearer token so it can't override / accompany the
+    // stored API key with unintended credentials.
+    delete env.ANTHROPIC_AUTH_TOKEN
     const key = configService.loadClaudeApiKey()
     if (key) env.ANTHROPIC_API_KEY = key
   } else {
