@@ -26,6 +26,21 @@ export function buildSdkSpawnOptions(): {
     configService.loadSettings().claudeAuthMethod === 'apiKey' ? 'apiKey' : 'subscription'
   const env: NodeJS.ProcessEnv = { ...process.env }
 
+  // Strip inherited env that would redirect or confuse the bundled Claude Code
+  // SDK: ANTHROPIC_BASE_URL / ANTHROPIC_MODEL point it at a different endpoint or
+  // model (Mango controls the model via the `model` option), and CLAUDECODE /
+  // CLAUDE_CODE_* mark it as a NESTED invocation. These are present when Mango
+  // (or `npm run dev`) is launched from within another Claude Code session, or
+  // if the user has ANTHROPIC_BASE_URL exported globally — both make the SDK
+  // emit malformed requests (400 on server_tool_use.input). A packaged app run
+  // from the OS launcher normally has none of these.
+  delete env.ANTHROPIC_BASE_URL
+  delete env.ANTHROPIC_MODEL
+  delete env.CLAUDECODE
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('CLAUDE_CODE_')) delete env[k]
+  }
+
   if (method === 'apiKey') {
     const key = configService.loadClaudeApiKey()
     if (key) env.ANTHROPIC_API_KEY = key
