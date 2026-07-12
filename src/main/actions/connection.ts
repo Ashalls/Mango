@@ -95,11 +95,13 @@ export function getStatus(): ConnectionState & { connectedIds: string[] } {
 }
 
 /**
- * Check if the active connection is marked as read-only.
+ * Check if a connection is marked as read-only. Defaults to the active
+ * connection, but callers that operate on a specific tab MUST pass that tab's
+ * connectionId so the guard checks the same connection the write targets.
  * Returns an error message if blocked, null if allowed.
  */
-export function checkReadOnly(): string | null {
-  const activeId = mongoService.getActiveConnectionId()
+export function checkReadOnly(connectionId?: string): string | null {
+  const activeId = connectionId ?? mongoService.getActiveConnectionId()
   if (!activeId) return null
 
   const connections = configService.loadConnections()

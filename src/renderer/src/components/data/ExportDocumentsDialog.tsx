@@ -7,6 +7,7 @@ import { trpc } from '@renderer/lib/trpc'
 interface ExportDocumentsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  connectionId?: string
   database: string
   collection: string
   currentFilter: Record<string, unknown>
@@ -20,6 +21,7 @@ type Format = 'json' | 'ndjson' | 'csv'
 export function ExportDocumentsDialog({
   open,
   onOpenChange,
+  connectionId,
   database,
   collection,
   currentFilter,
@@ -76,7 +78,7 @@ export function ExportDocumentsDialog({
     setCounting(true)
     let cancelled = false
     trpc.query.count
-      .query({ database, collection, filter: cleanFilter })
+      .query({ connectionId, database, collection, filter: cleanFilter })
       .then((n: number) => {
         if (!cancelled) setMatchCount(n)
       })

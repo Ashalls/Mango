@@ -22,6 +22,7 @@ export function BulkToolbar() {
     if (!activeTab) return
     if (!window.confirm(`Delete ${ids.length} document(s)? This cannot be undone.`)) return
     await trpc.mutation.deleteMany.mutate({
+      connectionId: activeTab.connectionId,
       database: activeTab.database,
       collection: activeTab.collection,
       filter: { _id: { $in: ids } }
@@ -115,6 +116,7 @@ export function BulkToolbar() {
       <InsertDocumentsDialog
         open={insertOpen}
         onOpenChange={setInsertOpen}
+        connectionId={activeTab.connectionId}
         database={activeTab.database}
         collection={activeTab.collection}
         onInserted={() => executeQuery()}
@@ -123,6 +125,7 @@ export function BulkToolbar() {
       <UpdateManyDialog
         open={updateOpen}
         onOpenChange={setUpdateOpen}
+        connectionId={activeTab.connectionId}
         database={activeTab.database}
         collection={activeTab.collection}
         currentFilter={activeTab.filter}
@@ -132,6 +135,7 @@ export function BulkToolbar() {
       <ExportDocumentsDialog
         open={exportOpen}
         onOpenChange={setExportOpen}
+        connectionId={activeTab.connectionId}
         database={activeTab.database}
         collection={activeTab.collection}
         currentFilter={activeTab.filter}

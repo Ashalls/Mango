@@ -8,6 +8,7 @@ export const queryRouter = router({
   find: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown()).optional().default({}),
@@ -24,42 +25,46 @@ export const queryRouter = router({
   documentSource: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         id: z.unknown()
       })
     )
     .query(async ({ input }) => {
-      return queryActions.findOneSource(input.database, input.collection, input.id)
+      return queryActions.findOneSource(input.database, input.collection, input.id, input.connectionId)
     }),
 
   count: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown()).optional().default({})
       })
     )
     .query(async ({ input }) => {
-      return queryActions.count(input.database, input.collection, input.filter)
+      return queryActions.count(input.database, input.collection, input.filter, input.connectionId)
     }),
 
   aggregate: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         pipeline: z.array(z.record(z.unknown()))
       })
     )
     .query(async ({ input }) => {
-      return queryActions.aggregate(input.database, input.collection, input.pipeline)
+      return queryActions.aggregate(input.database, input.collection, input.pipeline, input.connectionId)
     }),
 
   distinct: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         field: z.string(),
@@ -67,12 +72,13 @@ export const queryRouter = router({
       })
     )
     .query(async ({ input }) => {
-      return queryActions.distinct(input.database, input.collection, input.field, input.filter)
+      return queryActions.distinct(input.database, input.collection, input.field, input.filter, input.connectionId)
     }),
 
   aggregateWithStagePreview: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         pipeline: z.array(z.record(z.unknown())),
@@ -86,13 +92,15 @@ export const queryRouter = router({
         input.collection,
         input.pipeline,
         input.stageIndex,
-        input.sampleSize
+        input.sampleSize,
+        input.connectionId
       )
     }),
 
   explain: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown()).optional().default({}),
@@ -100,12 +108,13 @@ export const queryRouter = router({
       })
     )
     .query(async ({ input }) => {
-      return queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
+      return queryActions.explain(input.database, input.collection, input.filter, input.pipeline, input.connectionId)
     }),
 
   parsedExplain: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown()).optional().default({}),
@@ -113,7 +122,7 @@ export const queryRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const raw = await queryActions.explain(input.database, input.collection, input.filter, input.pipeline)
+      const raw = await queryActions.explain(input.database, input.collection, input.filter, input.pipeline, input.connectionId)
       return parseExplainResult(raw)
     }),
 

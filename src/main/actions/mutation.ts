@@ -24,9 +24,10 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
 export async function insertOne(
   database: string,
   collection: string,
-  document: Record<string, unknown>
+  document: Record<string, unknown>,
+  connectionId?: string
 ): Promise<{ insertedId: string }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const revived = reviveExtended(document) as Record<string, unknown>
   const result = await db.collection(collection).insertOne(revived)
   return { insertedId: result.insertedId.toString() }
@@ -36,9 +37,10 @@ export async function updateOne(
   database: string,
   collection: string,
   filter: Record<string, unknown>,
-  update: Record<string, unknown>
+  update: Record<string, unknown>,
+  connectionId?: string
 ): Promise<{ matchedCount: number; modifiedCount: number }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const processedFilter = convertObjectIds(filter)
   // If update doesn't use operators, wrap in $set
   const wrapped = Object.keys(update).some((k) => k.startsWith('$'))
@@ -54,9 +56,10 @@ export async function updateOne(
 export async function deleteOne(
   database: string,
   collection: string,
-  filter: Record<string, unknown>
+  filter: Record<string, unknown>,
+  connectionId?: string
 ): Promise<{ deletedCount: number }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const result = await db.collection(collection).deleteOne(convertObjectIds(filter))
   return { deletedCount: result.deletedCount }
 }
@@ -64,9 +67,10 @@ export async function deleteOne(
 export async function deleteMany(
   database: string,
   collection: string,
-  filter: Record<string, unknown>
+  filter: Record<string, unknown>,
+  connectionId?: string
 ): Promise<{ deletedCount: number }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const result = await db.collection(collection).deleteMany(convertObjectIds(filter))
   return { deletedCount: result.deletedCount }
 }
@@ -74,9 +78,10 @@ export async function deleteMany(
 export async function insertMany(
   database: string,
   collection: string,
-  documents: Record<string, unknown>[]
+  documents: Record<string, unknown>[],
+  connectionId?: string
 ): Promise<{ insertedCount: number }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const revived = documents.map((d) => reviveExtended(d) as Record<string, unknown>)
   const result = await db.collection(collection).insertMany(revived)
   return { insertedCount: result.insertedCount }
@@ -86,9 +91,10 @@ export async function updateMany(
   database: string,
   collection: string,
   filter: Record<string, unknown>,
-  update: Record<string, unknown>
+  update: Record<string, unknown>,
+  connectionId?: string
 ): Promise<{ matchedCount: number; modifiedCount: number }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const processedFilter = convertObjectIds(filter)
   const wrapped = Object.keys(update).some((k) => k.startsWith('$'))
     ? update

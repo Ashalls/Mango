@@ -42,7 +42,7 @@ export function DocumentEditor({
     if (selectedIdKey === null || !database || !collection) return
     let cancelled = false
     trpc.query.documentSource
-      .query({ database, collection, id: selectedId })
+      .query({ connectionId: tab?.connectionId, database, collection, id: selectedId })
       .then((res) => {
         if (cancelled || !res?.source) return
         const s = useTabStore.getState()
@@ -104,6 +104,7 @@ export function DocumentEditor({
       if (docId === undefined || docId === null) { setError('Document has no _id field'); return }
       const { _id: _ignoredId, ...fields } = updated
       await trpc.mutation.updateOne.mutate({
+        connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: docId },

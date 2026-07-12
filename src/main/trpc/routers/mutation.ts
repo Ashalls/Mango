@@ -7,20 +7,22 @@ export const mutationRouter = router({
   insertOne: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         document: z.record(z.unknown())
       })
     )
     .mutation(async ({ input }) => {
-      const blocked = connectionActions.checkReadOnly()
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
       if (blocked) throw new Error(blocked)
-      return mutationActions.insertOne(input.database, input.collection, input.document)
+      return mutationActions.insertOne(input.database, input.collection, input.document, input.connectionId)
     }),
 
   updateOne: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown()),
@@ -28,53 +30,56 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const blocked = connectionActions.checkReadOnly()
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
       if (blocked) throw new Error(blocked)
-      return mutationActions.updateOne(input.database, input.collection, input.filter, input.update)
+      return mutationActions.updateOne(input.database, input.collection, input.filter, input.update, input.connectionId)
     }),
 
   deleteOne: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown())
       })
     )
     .mutation(async ({ input }) => {
-      const blocked = connectionActions.checkReadOnly()
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
       if (blocked) throw new Error(blocked)
-      return mutationActions.deleteOne(input.database, input.collection, input.filter)
+      return mutationActions.deleteOne(input.database, input.collection, input.filter, input.connectionId)
     }),
 
   deleteMany: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown())
       })
     )
     .mutation(async ({ input }) => {
-      const blocked = connectionActions.checkReadOnly()
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
       if (blocked) throw new Error(blocked)
-      return mutationActions.deleteMany(input.database, input.collection, input.filter)
+      return mutationActions.deleteMany(input.database, input.collection, input.filter, input.connectionId)
     }),
 
   insertMany: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         documents: z.array(z.record(z.unknown()))
       })
     )
     .mutation(async ({ input }) => {
-      const blocked = connectionActions.checkReadOnly()
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
       if (blocked) throw new Error(blocked)
-      const result = await mutationActions.insertMany(input.database, input.collection, input.documents)
+      const result = await mutationActions.insertMany(input.database, input.collection, input.documents, input.connectionId)
       changelog.appendChangeLog({
-        source: 'user', connectionId: '', connectionName: '',
+        source: 'user', connectionId: input.connectionId ?? '', connectionName: '',
         database: input.database, collection: input.collection,
         operation: 'insert', count: result.insertedCount
       })
@@ -84,6 +89,7 @@ export const mutationRouter = router({
   updateMany: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         database: z.string(),
         collection: z.string(),
         filter: z.record(z.unknown()),
@@ -91,13 +97,13 @@ export const mutationRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const blocked = connectionActions.checkReadOnly()
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
       if (blocked) throw new Error(blocked)
       const result = await mutationActions.updateMany(
-        input.database, input.collection, input.filter, input.update
+        input.database, input.collection, input.filter, input.update, input.connectionId
       )
       changelog.appendChangeLog({
-        source: 'user', connectionId: '', connectionName: '',
+        source: 'user', connectionId: input.connectionId ?? '', connectionName: '',
         database: input.database, collection: input.collection,
         operation: 'update', filter: input.filter, changes: input.update,
         count: result.modifiedCount

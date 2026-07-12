@@ -8,6 +8,7 @@ import { parseShellDocument } from '@renderer/lib/shellJson'
 interface UpdateManyDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  connectionId?: string
   database: string
   collection: string
   currentFilter: Record<string, unknown>
@@ -17,6 +18,7 @@ interface UpdateManyDialogProps {
 export function UpdateManyDialog({
   open,
   onOpenChange,
+  connectionId,
   database,
   collection,
   currentFilter,
@@ -93,7 +95,7 @@ export function UpdateManyDialog({
 
     setPreviewing(true)
     try {
-      const count = await trpc.query.count.query({ database, collection, filter })
+      const count = await trpc.query.count.query({ connectionId, database, collection, filter })
       setPreviewCount(count)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed')
@@ -115,6 +117,7 @@ export function UpdateManyDialog({
     setUpdating(true)
     try {
       const result = await trpc.mutation.updateMany.mutate({
+        connectionId,
         database,
         collection,
         filter,

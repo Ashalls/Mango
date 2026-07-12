@@ -304,6 +304,7 @@ export function TreeView() {
         if (!doc?._id) continue
 
         await trpc.mutation.updateOne.mutate({
+          connectionId: tab.connectionId,
           database: tab.database,
           collection: tab.collection,
           filter: { _id: doc._id },

@@ -40,6 +40,7 @@ export interface CollectionInfo {
 }
 
 export interface QueryOptions {
+  connectionId?: string
   database: string
   collection: string
   filter?: Record<string, unknown>

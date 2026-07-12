@@ -53,6 +53,7 @@ export function MainPanel() {
     if (!activeTab) return
     try {
       const result = await trpc.query.parsedExplain.query({
+        connectionId: activeTab.connectionId,
         database: activeTab.database,
         collection: activeTab.collection,
         filter: activeTab.filter

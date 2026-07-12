@@ -323,6 +323,7 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     if (!field) return
     try {
       await trpc.mutation.updateOne.mutate({
+        connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: event.data._id },
@@ -339,6 +340,7 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     if (!confirm('Delete this document? This cannot be undone.')) return
     try {
       await trpc.mutation.deleteOne.mutate({
+        connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: doc._id }
@@ -375,6 +377,7 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
         return
       }
       await trpc.mutation.insertOne.mutate({
+        connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         document: doc

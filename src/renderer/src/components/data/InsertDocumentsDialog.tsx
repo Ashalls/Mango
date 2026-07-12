@@ -8,6 +8,7 @@ import { parseShellDocument } from '@renderer/lib/shellJson'
 interface InsertDocumentsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  connectionId?: string
   database: string
   collection: string
   onInserted: () => void
@@ -16,6 +17,7 @@ interface InsertDocumentsDialogProps {
 export function InsertDocumentsDialog({
   open,
   onOpenChange,
+  connectionId,
   database,
   collection,
   onInserted
@@ -57,6 +59,7 @@ export function InsertDocumentsDialog({
     setInserting(true)
     try {
       const result = await trpc.mutation.insertMany.mutate({
+        connectionId,
         database,
         collection,
         documents

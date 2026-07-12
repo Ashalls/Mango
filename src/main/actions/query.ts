@@ -55,9 +55,10 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
 export async function findOneSource(
   database: string,
   collection: string,
-  id: unknown
+  id: unknown,
+  connectionId?: string
 ): Promise<{ source: string | null }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const filter = convertObjectIds({ _id: id } as Record<string, unknown>)
   const doc = await db.collection(collection).findOne(filter)
   return { source: doc ? serializeToShellSource(doc) : null }
@@ -68,7 +69,7 @@ export async function find(options: QueryOptions): Promise<QueryResult> {
     filter: options.filter, projection: options.projection, sort: options.sort,
     skip: options.skip, limit: options.limit
   }, async () => {
-    const db = mongoService.getDb(options.database)
+    const db = mongoService.getDb(options.database, options.connectionId)
     const col = db.collection(options.collection)
 
     const limit = Math.min(options.limit ?? 50, MAX_RESULT_SIZE)
@@ -99,19 +100,21 @@ export async function find(options: QueryOptions): Promise<QueryResult> {
 export async function count(
   database: string,
   collection: string,
-  filter: Record<string, unknown>
+  filter: Record<string, unknown>,
+  connectionId?: string
 ): Promise<number> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   return db.collection(collection).countDocuments(convertObjectIds(filter))
 }
 
 export async function aggregate(
   database: string,
   collection: string,
-  pipeline: Record<string, unknown>[]
+  pipeline: Record<string, unknown>[],
+  connectionId?: string
 ): Promise<Record<string, unknown>[]> {
   return queryLog.timed(database, collection, 'aggregate', { pipeline }, async () => {
-    const db = mongoService.getDb(database)
+    const db = mongoService.getDb(database, connectionId)
     const results = await db.collection(collection).aggregate(pipeline).toArray()
     return serializeDocuments(results.slice(0, MAX_RESULT_SIZE) as Record<string, unknown>[])
   })
@@ -122,9 +125,10 @@ export async function aggregateWithStagePreview(
   collection: string,
   pipeline: Record<string, unknown>[],
   stageIndex: number,
-  sampleSize: number = 20
+  sampleSize: number = 20,
+  connectionId?: string
 ): Promise<{ documents: Record<string, unknown>[]; count: number }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const stagesUpTo = pipeline.slice(0, stageIndex + 1)
   const countPipeline = [...stagesUpTo, { $count: 'total' }]
   const previewPipeline = [...stagesUpTo, { $limit: sampleSize }]
@@ -144,9 +148,10 @@ export async function distinct(
   database: string,
   collection: string,
   field: string,
-  filter: Record<string, unknown>
+  filter: Record<string, unknown>,
+  connectionId?: string
 ): Promise<unknown[]> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   return db.collection(collection).distinct(field, convertObjectIds(filter))
 }
 
@@ -154,9 +159,10 @@ export async function explain(
   database: string,
   collection: string,
   filter: Record<string, unknown>,
-  pipeline?: Record<string, unknown>[]
+  pipeline?: Record<string, unknown>[],
+  connectionId?: string
 ): Promise<Record<string, unknown>> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   if (pipeline && pipeline.length > 0) {
     const result = await db
       .collection(collection)

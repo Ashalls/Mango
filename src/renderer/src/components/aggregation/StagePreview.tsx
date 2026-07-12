@@ -3,6 +3,7 @@ import { trpc } from '@renderer/lib/trpc'
 import type { AggregationStage } from '@shared/types'
 
 interface StagePreviewProps {
+  connectionId?: string
   database: string
   collection: string
   stages: AggregationStage[]
@@ -18,6 +19,7 @@ function buildPipeline(stages: AggregationStage[]): Record<string, unknown>[] {
 }
 
 export function StagePreview({
+  connectionId,
   database,
   collection,
   stages,
@@ -68,6 +70,7 @@ export function StagePreview({
         if (selectedIndex === 0) {
           // First stage input = raw collection docs
           const result = await trpc.query.find.query({
+            connectionId,
             database,
             collection,
             filter: {},
@@ -86,6 +89,7 @@ export function StagePreview({
       }
 
       const result = await trpc.query.aggregateWithStagePreview.query({
+        connectionId,
         database,
         collection,
         pipeline,

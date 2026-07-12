@@ -700,6 +700,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
         <InsertDocumentsDialog
           open={true}
           onOpenChange={(o) => { if (!o) setInsertTarget(null) }}
+          connectionId={connectionId}
           database={insertTarget.db}
           collection={insertTarget.col}
           onInserted={() => {

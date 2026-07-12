@@ -318,6 +318,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
     get().updateTab(tab.id, { loading: true, error: null })
     try {
       const results = await trpc.query.find.query({
+        connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: tab.filter,

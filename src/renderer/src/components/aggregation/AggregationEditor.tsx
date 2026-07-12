@@ -45,6 +45,7 @@ export function AggregationEditor() {
     try {
       const pipeline = buildPipeline(stages)
       const documents = await trpc.query.aggregate.query({
+        connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         pipeline
@@ -84,6 +85,7 @@ export function AggregationEditor() {
         <StageEditor stage={selectedStage} onChange={handleStageContentChange} />
 
         <StagePreview
+          connectionId={tab.connectionId}
           database={tab.database}
           collection={tab.collection}
           stages={stages}
