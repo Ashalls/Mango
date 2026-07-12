@@ -73,6 +73,7 @@ export function ValueSearchDialog({ open, onClose }: ValueSearchDialogProps) {
       }
 
       const data = await trpc.query.valueSearch.query({
+        connectionId: activeConnection?.profileId,
         searchTerm: searchTerm.trim(),
         scope,
         regex,

@@ -21,9 +21,14 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
     } else if (isBsonInstance(value)) {
       result[key] = value
     } else if (Array.isArray(value)) {
-      result[key] = value.map((v) =>
-        typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
-      )
+      result[key] = value.map((v) => {
+        if (typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v)) return new ObjectId(v)
+        if (isBsonInstance(v)) return v
+        // Recurse into object elements so hex strings inside $and/$or/$in-of-docs
+        // are coerced too (QueryBuilder emits {$and:[{_id:"…"}]} for multi-row).
+        if (v && typeof v === 'object') return convertObjectIds(v as Record<string, unknown>)
+        return v
+      })
     } else if (value && typeof value === 'object') {
       result[key] = convertObjectIds(value as Record<string, unknown>)
     } else {

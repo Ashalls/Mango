@@ -108,6 +108,7 @@ export function ExportDocumentsDialog({
     setExporting(true)
     try {
       const result = await trpc.exportImport.exportCollection.mutate({
+        connectionId,
         database,
         collection,
         format,

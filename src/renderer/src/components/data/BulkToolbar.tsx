@@ -39,6 +39,7 @@ export function BulkToolbar() {
     // round-trip back on import.
     try {
       await trpc.exportImport.exportCollection.mutate({
+        connectionId: activeTab.connectionId,
         database: activeTab.database,
         collection: activeTab.collection,
         format: 'json',

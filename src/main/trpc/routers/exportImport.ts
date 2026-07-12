@@ -14,6 +14,7 @@ export const exportImportRouter = router({
 
   exportCollection: procedure
     .input(z.object({
+      connectionId: z.string().optional(),
       database: z.string(),
       collection: z.string(),
       format: z.enum(['json', 'csv', 'ndjson']).default('json'),
@@ -24,6 +25,7 @@ export const exportImportRouter = router({
     }))
     .mutation(async ({ input }) => {
       return exportImportActions.exportCollection(input.database, input.collection, input.format, {
+        connectionId: input.connectionId,
         filter: input.filter,
         projection: input.projection ?? null,
         sort: input.sort ?? null,

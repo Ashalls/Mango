@@ -129,6 +129,7 @@ export const queryRouter = router({
   valueSearch: procedure
     .input(
       z.object({
+        connectionId: z.string().optional(),
         searchTerm: z.string(),
         scope: z.object({
           type: z.enum(['server', 'database', 'collection']),
@@ -144,7 +145,8 @@ export const queryRouter = router({
       return queryActions.valueSearch(
         input.searchTerm,
         input.scope,
-        { regex: input.regex, caseInsensitive: input.caseInsensitive, maxResults: input.maxResults }
+        { regex: input.regex, caseInsensitive: input.caseInsensitive, maxResults: input.maxResults },
+        input.connectionId
       )
     }),
 

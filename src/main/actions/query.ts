@@ -70,9 +70,14 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
     } else if (isBsonInstance(value)) {
       result[key] = value
     } else if (Array.isArray(value)) {
-      result[key] = value.map((v) =>
-        typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
-      )
+      result[key] = value.map((v) => {
+        if (typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v)) return new ObjectId(v)
+        if (isBsonInstance(v)) return v
+        // Recurse into object elements so hex strings inside $and/$or/$in-of-docs
+        // are coerced too (QueryBuilder emits {$and:[{_id:"…"}]} for multi-row).
+        if (v && typeof v === 'object') return convertObjectIds(v as Record<string, unknown>)
+        return v
+      })
     } else if (value && typeof value === 'object') {
       result[key] = convertObjectIds(value as Record<string, unknown>)
     } else {
@@ -229,7 +234,8 @@ export async function explain(
 export async function valueSearch(
   searchTerm: string,
   scope: { type: 'server' | 'database' | 'collection'; database?: string; collection?: string },
-  options: { regex: boolean; caseInsensitive: boolean; maxResults: number }
+  options: { regex: boolean; caseInsensitive: boolean; maxResults: number },
+  connectionId?: string
 ): Promise<
   { database: string; collection: string; documentId: string; fieldPath: string; matchedValue: string }[]
 > {
@@ -246,17 +252,17 @@ export async function valueSearch(
   if (scope.type === 'collection' && scope.database && scope.collection) {
     collectionsToSearch.push({ database: scope.database, collection: scope.collection })
   } else if (scope.type === 'database' && scope.database) {
-    const db = mongoService.getDb(scope.database)
+    const db = mongoService.getDb(scope.database, connectionId)
     const cols = await db.listCollections().toArray()
     for (const col of cols) {
       if (col.type !== 'view') collectionsToSearch.push({ database: scope.database, collection: col.name })
     }
   } else {
-    const admin = mongoService.getDb('admin').admin()
+    const admin = mongoService.getDb('admin', connectionId).admin()
     const dbList = await admin.listDatabases()
     for (const dbInfo of dbList.databases) {
       if (['admin', 'local', 'config'].includes(dbInfo.name)) continue
-      const db = mongoService.getDb(dbInfo.name)
+      const db = mongoService.getDb(dbInfo.name, connectionId)
       const cols = await db.listCollections().toArray()
       for (const col of cols) {
         if (col.type !== 'view') collectionsToSearch.push({ database: dbInfo.name, collection: col.name })
@@ -267,7 +273,7 @@ export async function valueSearch(
   for (const { database, collection } of collectionsToSearch) {
     if (results.length >= options.maxResults) break
 
-    const db = mongoService.getDb(database)
+    const db = mongoService.getDb(database, connectionId)
     const col = db.collection(collection)
 
     const sample = await col.aggregate([{ $sample: { size: 10 } }]).toArray()

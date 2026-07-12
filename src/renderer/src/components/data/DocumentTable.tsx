@@ -143,22 +143,46 @@ function coerceEditToOriginalType(original: unknown, newVal: unknown): unknown {
 
   if (original && typeof original === 'object' && !Array.isArray(original)) {
     const o = original as Record<string, unknown>
-    if ('$oid' in o) return asStr === '' ? null : (/^[0-9a-fA-F]{24}$/.test(asStr) ? { $oid: asStr } : asStr)
-    if ('$date' in o) return asStr === '' ? null : { $date: asStr }
-    if ('$numberDecimal' in o) return asStr === '' ? null : { $numberDecimal: asStr }
-    if ('$numberLong' in o) return asStr === '' ? null : { $numberLong: asStr }
+    // Typed BSON field: re-wrap in the matching marker, clearing to null when
+    // empty. Reject clearly-invalid input rather than silently writing a plain
+    // string (which would change the stored field's type).
+    if ('$oid' in o) {
+      if (asStr === '') return null
+      if (!/^[0-9a-fA-F]{24}$/.test(asStr)) throw new Error(`"${asStr}" is not a valid ObjectId (24 hex characters).`)
+      return { $oid: asStr }
+    }
+    if ('$date' in o) {
+      if (asStr === '') return null
+      if (Number.isNaN(new Date(asStr).getTime())) throw new Error(`"${asStr}" is not a valid date.`)
+      return { $date: asStr }
+    }
+    if ('$numberDecimal' in o) {
+      if (asStr === '') return null
+      if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(asStr.trim())) throw new Error(`"${asStr}" is not a valid decimal.`)
+      return { $numberDecimal: asStr }
+    }
+    if ('$numberLong' in o) {
+      if (asStr === '') return null
+      if (!/^[+-]?\d+$/.test(asStr.trim())) throw new Error(`"${asStr}" is not a valid integer.`)
+      return { $numberLong: asStr }
+    }
     if ('$uuid' in o) return asStr === '' ? null : { $uuid: asStr }
-    // Other BSON ($binary/$timestamp) or a plain sub-document: fall through.
+    if ('$regex' in o) return { $regex: asStr, $options: typeof o.$options === 'string' ? o.$options : '' }
+    if ('$binary' in o || '$timestamp' in o) {
+      throw new Error('Editing Binary/Timestamp fields inline is not supported — use the document editor.')
+    }
+    // Any other object marker: fall through to the generic handling below.
   }
   if (typeof original === 'number') {
     if (asStr.trim() === '') return null // clearing a number should not write 0
     const n = Number(asStr)
-    return Number.isNaN(n) ? asStr : n
+    if (Number.isNaN(n)) throw new Error(`"${asStr}" is not a valid number.`)
+    return n
   }
   if (typeof original === 'boolean') {
     if (asStr === 'true') return true
     if (asStr === 'false') return false
-    return asStr
+    throw new Error(`"${asStr}" is not a boolean (expected true or false).`)
   }
   // String / null / unknown original: keep the raw string, but honour explicit
   // null and JSON object/array input.
@@ -382,7 +406,7 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     // instead of being flattened to a string/number. The raw editor text is
     // preferred over event.data[field], which the valueSetter already coerced.
     const rawNew = event.newValue !== undefined ? event.newValue : event.data[field]
-    let updateValue: unknown = event.data[field]
+    let updateValue: unknown
     try {
       const src = await trpc.query.documentSource.query({
         connectionId: tab.connectionId,
@@ -390,14 +414,16 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
         collection: tab.collection,
         id: event.data._id
       })
-      if (src?.source) {
-        const typedDoc = parseShellDocument(src.source) as Record<string, unknown>
-        updateValue = coerceEditToOriginalType(typedDoc[field], rawNew)
-      }
-    } catch {
-      // Couldn't resolve the typed source — write the (lossy) value rather than
-      // dropping the edit, but say so.
-      console.warn('[DocumentTable] typed source unavailable; writing edit without BSON type preservation')
+      if (!src?.source) throw new Error('could not load the document to verify its field types')
+      const typedDoc = parseShellDocument(src.source) as Record<string, unknown>
+      updateValue = coerceEditToOriginalType(typedDoc[field], rawNew)
+    } catch (err) {
+      // Never knowingly write a lossy/degraded value — a transient fetch failure
+      // or invalid input would permanently change the field's BSON type. Abort
+      // and revert the grid to the stored value.
+      alert(`Edit not saved: ${err instanceof Error ? err.message : 'could not verify the field type.'}`)
+      executeQuery()
+      return
     }
 
     try {

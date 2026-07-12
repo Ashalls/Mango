@@ -4,11 +4,20 @@ import { execFile, fork, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { randomBytes } from 'crypto'
 import { join as pathJoin } from 'path'
-import { ObjectId } from 'mongodb'
+import { ObjectId, Binary, Decimal128, Long, Timestamp, UUID } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import * as configService from '../services/config'
 import { serializeDocuments, serializeDocument, serializeToEJSON, reviveExtended } from '../services/serialize'
 import type { OperationProgress } from '@shared/types'
+
+/** Real BSON instances passed through untouched (never recursed into). */
+function isBsonInstance(v: unknown): boolean {
+  return (
+    v instanceof ObjectId || v instanceof Binary || v instanceof Decimal128 ||
+    v instanceof Long || v instanceof Timestamp || v instanceof UUID ||
+    v instanceof Date || v instanceof RegExp
+  )
+}
 
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
 function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
@@ -16,17 +25,28 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === 'string' && /^[0-9a-f]{24}$/i.test(value)) {
       result[key] = new ObjectId(value)
+    } else if (isBsonInstance(value)) {
+      result[key] = value
     } else if (Array.isArray(value)) {
-      result[key] = value.map((v) =>
-        typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
-      )
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = value.map((v) => {
+        if (typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v)) return new ObjectId(v)
+        if (isBsonInstance(v)) return v
+        if (v && typeof v === 'object') return convertObjectIds(v as Record<string, unknown>)
+        return v
+      })
+    } else if (value && typeof value === 'object') {
       result[key] = convertObjectIds(value as Record<string, unknown>)
     } else {
       result[key] = value
     }
   }
   return result
+}
+
+/** Revive Extended-JSON markers ($date/$oid/...) then coerce bare hex, matching
+ * the query/mutation filter path so a Date filter exports the same rows it counts. */
+function reviveFilter(filter: Record<string, unknown>): Record<string, unknown> {
+  return convertObjectIds(reviveExtended(filter) as Record<string, unknown>)
 }
 
 const execFileAsync = promisify(execFile)
@@ -849,6 +869,7 @@ function emitProgress(event: string, data: unknown): void {
 }
 
 export interface ExportCollectionOptions {
+  connectionId?: string
   filter?: Record<string, unknown>
   projection?: Record<string, number> | null
   sort?: Record<string, number> | null
@@ -891,8 +912,8 @@ export async function exportCollection(
 
   if (canceled || !filePath) return null
 
-  const db = mongoService.getDb(database)
-  const processedFilter = convertObjectIds(options.filter ?? {})
+  const db = mongoService.getDb(database, options.connectionId)
+  const processedFilter = reviveFilter(options.filter ?? {})
 
   let cursor = db.collection(collection).find(processedFilter)
   if (options.projection) cursor = cursor.project(options.projection)

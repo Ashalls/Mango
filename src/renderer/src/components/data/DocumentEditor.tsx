@@ -60,15 +60,19 @@ export function DocumentEditor({
             : typeof liveId === 'object'
               ? JSON.stringify(liveId)
               : String(liveId)
+        // Only mark the source as loaded if we actually installed the typed
+        // shell source. If the user started editing before the fetch resolved
+        // (isDirty), the editor is still on the lossy JSON fallback, so leaving
+        // sourceLoaded false keeps the Save warning armed.
         if (live && !live.isDirty && liveKey === selectedIdKey) {
           s.setEditorContentPristine(res.source)
+          if (!cancelled) setSourceLoaded(true)
         }
-        if (!cancelled) setSourceLoaded(true)
       })
       .catch(() => { /* keep plain-JSON fallback; sourceLoaded stays false */ })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIdKey, database, collection, refreshTick])
+  }, [selectedIdKey, database, collection, refreshTick, tab?.id, tab?.connectionId])
 
   // Escape restores the docked editor when popped out. Content lives in the
   // tab store, so collapsing never loses edits.
