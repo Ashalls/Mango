@@ -2,6 +2,7 @@ import { query as claudeQuery } from '@anthropic-ai/claude-agent-sdk'
 import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { DEFAULT_MCP_PORT } from '@shared/constants'
 import type { ClaudeAuthMethod } from '@shared/types'
 import * as configService from './config'
@@ -40,6 +41,18 @@ export function buildSdkSpawnOptions(): {
     )
     opts.executable = process.execPath as 'node'
     env.ELECTRON_RUN_AS_NODE = '1'
+  } else {
+    // Dev: pin to the SDK bundled in the project's node_modules so `npm run dev`
+    // uses the SAME Claude Code CLI as the packaged app, instead of letting the
+    // SDK resolve a (possibly mismatched) `claude` from the developer's PATH —
+    // a version mismatch there produces malformed server_tool_use blocks that
+    // the API rejects. Guarded by existsSync so a missing path just falls back.
+    const devCli = join(app.getAppPath(), 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js')
+    if (existsSync(devCli)) {
+      opts.pathToClaudeCodeExecutable = devCli
+      opts.executable = process.execPath as 'node'
+      env.ELECTRON_RUN_AS_NODE = '1'
+    }
   }
   return opts
 }
