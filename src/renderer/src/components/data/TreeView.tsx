@@ -326,8 +326,11 @@ export function TreeView() {
         editsByDocKey.get(docKey)![fieldPath] = value
       }
 
-      // Apply each document's edits, resolving the doc by _id against the
-      // CURRENT results; skip any no longer loaded rather than guess by index.
+      // Resolve every edit to its document and PREFLIGHT for ambiguity BEFORE
+      // issuing any mutation — otherwise an unambiguous edit could commit before
+      // we discover a later unsafe target, leaving a partial save. Docs no
+      // longer loaded (page changed) are skipped rather than guessed by index.
+      const toApply: { doc: Record<string, unknown>; fields: Record<string, unknown> }[] = []
       for (const [docKey, fields] of editsByDocKey) {
         const doc = documents.find((d) => rowIdFor(d) === docKey)
         if (!doc?._id) continue
@@ -342,7 +345,10 @@ export function TreeView() {
             `(mixed ObjectId/string types). Edit this document from the JSON view instead.`
           )
         }
+        toApply.push({ doc, fields })
+      }
 
+      for (const { doc, fields } of toApply) {
         const result = await trpc.mutation.updateOne.mutate({
           connectionId: tab.connectionId,
           database: tab.database,
