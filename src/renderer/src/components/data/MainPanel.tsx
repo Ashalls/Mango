@@ -168,33 +168,49 @@ export function MainPanel() {
                       per tab isolates each tab's filter UI. */}
                   <QueryBuilder key={activeTab.id} />
                   <BulkToolbar />
-                  {viewMode === 'table' && activeTab.selectedDocument ? (
-                    <div ref={splitRef} className="flex flex-1 min-h-0 flex-col">
-                      {/* The table pane uses a DEFINITE percentage height rather than
-                          flexBasis:0 + flexGrow. ag-grid resolves its own height:100%
-                          against this pane, and Chromium fails to re-resolve a %-height
-                          child of a flex-basis:0 grown item after a reflow (it collapses
-                          to 0 and sticks) — which the document-editor pop-out's
-                          position:fixed overlay triggers. A definite % height is immune. */}
-                      <div className="min-h-0" style={{ height: `${documentSplitRatio * 100}%`, flexShrink: 0 }}>
-                        <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} popoutExpanded={editorExpanded} />
+                  {/* DocumentTable stays at ONE stable position in the tree
+                      whether or not a document is selected. Previously the split
+                      and non-split layouts were two separate JSX branches, so
+                      React unmounted and recreated ag-grid on every row click and
+                      every editor close — remounting during that same-commit
+                      reflow is when the grid latched a 0-height viewport and went
+                      blank. Now we only vary the table pane's height and render
+                      the editor split below it conditionally; the grid is never
+                      remounted. */}
+                  {(() => {
+                    const splitOpen = viewMode === 'table' && !!activeTab.selectedDocument
+                    return (
+                      <div ref={splitRef} className="flex flex-1 min-h-0 flex-col">
+                        {/* Split: a DEFINITE percentage height (Chromium fails to
+                            re-resolve a %-height child of a flex-grown item after a
+                            reflow). Non-split: plain flex-grow, as before. */}
+                        <div
+                          className="min-h-0"
+                          style={
+                            splitOpen
+                              ? { height: `${documentSplitRatio * 100}%`, flexShrink: 0 }
+                              : { flex: '1 1 0%', minHeight: 0 }
+                          }
+                        >
+                          <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} popoutExpanded={editorExpanded} />
+                        </div>
+                        {splitOpen && (
+                          <>
+                            <div
+                              className="h-1.5 shrink-0 cursor-row-resize bg-border transition-colors hover:bg-emerald-500/50"
+                              onPointerDown={startSplitDrag}
+                              title="Drag to resize"
+                            />
+                            {/* Editor pane takes the remaining height; Monaco
+                                self-sizes via automaticLayout, so flex-grow is safe. */}
+                            <div className="min-h-0 flex-1">
+                              <DocumentEditor expanded={editorExpanded} onExpandedChange={setEditorExpanded} />
+                            </div>
+                          </>
+                        )}
                       </div>
-                      <div
-                        className="h-1.5 shrink-0 cursor-row-resize bg-border transition-colors hover:bg-emerald-500/50"
-                        onPointerDown={startSplitDrag}
-                        title="Drag to resize"
-                      />
-                      {/* Editor pane takes the remaining height; Monaco self-sizes via
-                          automaticLayout, so flex-grow here is safe. */}
-                      <div className="min-h-0 flex-1">
-                        <DocumentEditor expanded={editorExpanded} onExpandedChange={setEditorExpanded} />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex-1 min-h-0">
-                      <DocumentTable viewMode={viewMode} onViewModeChange={setViewMode} />
-                    </div>
-                  )}
+                    )
+                  })()}
                 </>
               ) : subTab === 'aggregation' ? (
                 <>

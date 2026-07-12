@@ -138,7 +138,10 @@ export function AggregationEditor() {
         open={codegenOpen}
         onClose={() => setCodegenOpen(false)}
         type="aggregate"
-        pipeline={buildPipeline(stages)}
+        // buildPipeline JSON.parses each stage and throws on transiently-invalid
+        // input; it runs on every render (the modal is always mounted), so guard
+        // it here rather than white-screening the app while the user types.
+        pipeline={(() => { try { return buildPipeline(stages) } catch { return [] } })()}
       />
     </div>
   )

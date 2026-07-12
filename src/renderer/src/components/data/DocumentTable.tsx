@@ -167,6 +167,16 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
   const pageInputRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<AgGridReact>(null)
   const gridWrapperRef = useRef<HTMLDivElement>(null)
+  // Inline add-row state (pinned bottom row). Declared here with the other
+  // hooks — ABOVE the early `return null` below — so hook order stays stable.
+  const [addRowOpen, setAddRowOpen] = useState(false)
+  const [addRowValues, setAddRowValues] = useState<Record<string, string>>({})
+  const [addRowSaving, setAddRowSaving] = useState(false)
+  // Stable per-row ids for documents that have no _id (projections / some
+  // aggregation outputs). Keyed by the row object so the id survives
+  // re-renders instead of every such row colliding on "undefined".
+  const rowIdMap = useRef(new WeakMap<object, string>())
+  const rowIdCounter = useRef(0)
 
   // When the document-editor pop-out closes (popoutExpanded: true -> false),
   // ag-grid can leave its rows stuck at 0px height — only a re-render re-lays
@@ -181,43 +191,42 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     return () => cancelAnimationFrame(raf)
   }, [popoutExpanded])
 
-  // Canary + self-heal for the long-standing "table goes blank until you
-  // right-click" bug. ag-grid has no fallback height: it renders entirely
-  // against this wrapper's resolved size and only re-measures on a size-change
-  // event. If a reflow ever collapses the wrapper to 0px while documents are
-  // loaded, the grid shows nothing until something forces a re-measure (which a
-  // right-click incidentally did, via the context menu's body scroll-lock).
-  // Observe the wrapper directly so that (a) any collapse is LOUD in the console
-  // instead of a silent blank, and (b) the moment height returns we force
-  // ag-grid to re-lay-out, in case it latched on an empty viewport. The grid is
-  // also now absolutely positioned (see below), so a hard collapse should no
-  // longer be reachable — this is belt-and-braces, and our regression alarm.
+  // Self-heal for the long-standing "table goes blank until you right-click"
+  // bug. ag-grid renders against this wrapper's resolved size and only
+  // re-measures on a size-change event; if a reflow ever latches it on a
+  // 0-height viewport it paints nothing until something forces a re-layout
+  // (a right-click did this incidentally, via the re-render it triggers).
+  //
+  // We deliberately do NOT gate on witnessing the transient 0: ResizeObserver
+  // coalesces a collapse+restore within one frame into a single positive entry,
+  // so the 0 is never observed and the old `prevHeight === 0` heal was missed —
+  // which is why the bug survived earlier fixes. Instead we check the *painted*
+  // state on every tick: whenever the wrapper has size and there are documents
+  // but ag-grid has rendered no row nodes, force a re-layout. That needs no
+  // witnessed 0-transition, so the coalescing hole can't hide it.
   useEffect(() => {
     const el = gridWrapperRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    let prevHeight = el.clientHeight
-    const observer = new ResizeObserver(() => {
+    const heal = () => {
+      const api = gridRef.current?.api
+      if (!api) return
       const s = useTabStore.getState()
       const liveTab = s.tabs.find((t) => t.id === s.activeTabId)
       const docCount = liveTab?.results?.documents?.length ?? 0
-      const height = el.clientHeight
       const width = el.clientWidth
+      const height = el.clientHeight
       if (width > 0 && height === 0 && docCount > 0) {
         console.warn(
           `[DocumentTable] grid wrapper collapsed to 0px height (width=${width}px) ` +
-            `with ${docCount} docs loaded — ag-grid will be blank until a re-measure. ` +
-            `This is the "disappearing table" regression; check the height cascade.`
+            `with ${docCount} docs loaded — forcing a re-measure on restore.`
         )
       }
-      if (prevHeight === 0 && height > 0) {
-        const api = gridRef.current?.api
-        if (api) {
-          api.resetRowHeights()
-          if (api.getDisplayedRowCount() === 0 && docCount > 0) api.redrawRows()
-        }
+      if (width > 0 && height > 0 && docCount > 0 && api.getRenderedNodes().length === 0) {
+        api.resetRowHeights()
+        api.redrawRows()
       }
-      prevHeight = height
-    })
+    }
+    const observer = new ResizeObserver(heal)
     observer.observe(el)
     return () => observer.disconnect()
   }, [viewMode])
@@ -350,11 +359,6 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
       alert(`Failed to delete: ${err instanceof Error ? err.message : err}`)
     }
   }
-
-  // Inline add row (pinned bottom row in AG Grid)
-  const [addRowOpen, setAddRowOpen] = useState(false)
-  const [addRowValues, setAddRowValues] = useState<Record<string, string>>({})
-  const [addRowSaving, setAddRowSaving] = useState(false)
 
   const rowData = addRowOpen
     ? [...documents, { _id: '__new__', __isAddRow: true, ...addRowValues }]
@@ -553,7 +557,31 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
                   singleClickEdit={false}
                   enableCellTextSelection={true}
                   suppressContextMenu
-                  getRowId={(params) => params.data._id ? String(params.data._id) : String(params.rowIndex)}
+                  onGridSizeChanged={(e) => {
+                    // Companion to the ResizeObserver self-heal: ag-grid fires
+                    // this on its own viewport size changes; repaint if we ended
+                    // up sized-but-blank.
+                    if (documents.length > 0 && e.api.getRenderedNodes().length === 0) {
+                      e.api.resetRowHeights()
+                      e.api.redrawRows()
+                    }
+                  }}
+                  getRowId={(params) => {
+                    const id = params.data?._id
+                    if (id !== null && id !== undefined) {
+                      return typeof id === 'object' ? JSON.stringify(id) : String(id)
+                    }
+                    // No _id (projection / some aggregations): assign a stable id
+                    // keyed by the row object so selection & row identity survive
+                    // re-renders instead of every such row colliding on "undefined".
+                    const data = params.data as object
+                    let key = rowIdMap.current.get(data)
+                    if (!key) {
+                      key = `__row_${rowIdCounter.current++}`
+                      rowIdMap.current.set(data, key)
+                    }
+                    return key
+                  }}
                   getRowStyle={(params) => {
                     if (params.data?.__isAddRow) {
                       return { fontStyle: 'italic', background: 'rgba(16, 185, 129, 0.05)' }

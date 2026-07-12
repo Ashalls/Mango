@@ -279,6 +279,12 @@ export function registerTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: true, destructiveHint: false }
   }, async ({ database, collection, pipeline }) => {
+    // $out/$merge stages write a collection despite the "read" annotation —
+    // gate them with the same write-access check as the mutation tools.
+    if (queryActions.pipelineHasWriteStage(pipeline)) {
+      const blocked = checkWriteAccess(database)
+      if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    }
     const result = await queryActions.aggregate(database, collection, pipeline)
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
   })
@@ -321,6 +327,10 @@ export function registerTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: true, destructiveHint: false }
   }, async ({ database, collection, pipeline, stageIndex, sampleSize }) => {
+    if (queryActions.pipelineHasWriteStage(pipeline)) {
+      const blocked = checkWriteAccess(database)
+      if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    }
     const result = await queryActions.aggregateWithStagePreview(
       database, collection, pipeline, stageIndex, sampleSize
     )

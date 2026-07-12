@@ -114,7 +114,7 @@ A full audit lives in **`docs/AUDIT-2026-07.md`** (severity-ranked, with
 file:line and fixes). Read it before touching data flow, connections, the grid,
 or serialization. Headline unfixed criticals as of this writing:
 
-- **C2** — aggregation `$out`/`$merge` bypasses write guards (incl. the Claude tool).
 - **C3** — TreeView pending edits keyed by row index, can save to the wrong doc.
 - **C4** — grid inline edits flatten BSON types (lossy path written back).
-- **C5** — invalid aggregation JSON throws in render; no top-level ErrorBoundary.
+
+(C1, C2, C5 and the vanishing-grid bug are fixed — see `docs/AUDIT-2026-07.md`.)

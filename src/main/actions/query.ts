@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb'
 import * as mongoService from '../services/mongodb'
+import * as connectionActions from './connection'
 import { serializeDocuments, serializeToShellSource } from '../services/serialize'
 import * as queryLog from '../services/queryLog'
 import { MAX_RESULT_SIZE, MAX_REGEX_PATTERN_LENGTH, REGEX_QUANTIFIER_DEPTH_LIMIT } from '@shared/constants'
@@ -25,6 +26,29 @@ function assertSafeRegex(pattern: string): void {
   } catch (e) {
     throw new Error(`Invalid regex pattern: ${(e as Error).message}`)
   }
+}
+
+/**
+ * True if any pipeline stage writes to a collection ($out / $merge). Such
+ * stages execute a WRITE even though they run through the "aggregate" (read)
+ * path, so they must be gated by the same write-access checks as mutations.
+ */
+export function pipelineHasWriteStage(pipeline: Record<string, unknown>[]): boolean {
+  return pipeline.some(
+    (stage) => stage && typeof stage === 'object' && ('$out' in stage || '$merge' in stage)
+  )
+}
+
+/**
+ * Block an aggregation that would write ($out/$merge) when the target
+ * connection is read-only. Without this, a pipeline ending in `{ $out: ... }`
+ * bypasses every mutation guard (read-only/production connections, and the
+ * read-only-annotated Claude aggregate tool).
+ */
+function assertAggregateWriteAllowed(pipeline: Record<string, unknown>[], connectionId?: string): void {
+  if (!pipelineHasWriteStage(pipeline)) return
+  const blocked = connectionActions.checkReadOnly(connectionId)
+  if (blocked) throw new Error(blocked)
 }
 
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
@@ -113,6 +137,7 @@ export async function aggregate(
   pipeline: Record<string, unknown>[],
   connectionId?: string
 ): Promise<Record<string, unknown>[]> {
+  assertAggregateWriteAllowed(pipeline, connectionId)
   return queryLog.timed(database, collection, 'aggregate', { pipeline }, async () => {
     const db = mongoService.getDb(database, connectionId)
     const results = await db.collection(collection).aggregate(pipeline).toArray()
@@ -128,6 +153,7 @@ export async function aggregateWithStagePreview(
   sampleSize: number = 20,
   connectionId?: string
 ): Promise<{ documents: Record<string, unknown>[]; count: number }> {
+  assertAggregateWriteAllowed(pipeline, connectionId)
   const db = mongoService.getDb(database, connectionId)
   const stagesUpTo = pipeline.slice(0, stageIndex + 1)
   const countPipeline = [...stagesUpTo, { $count: 'total' }]
