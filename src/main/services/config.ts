@@ -5,7 +5,7 @@ import type { ConnectionFolder, ConnectionProfile } from '@shared/types'
 
 function ensureConfigDir(): void {
   if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true })
+    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 })
   }
 }
 
@@ -57,25 +57,35 @@ export function loadConnections(): ConnectionProfile[] {
 
 export function saveConnections(connections: ConnectionProfile[]): void {
   ensureConfigDir()
-  const toSave = isEncryptionAvailable()
-    ? connections.map((conn) => {
-        conn = {
-          ...conn,
-          uri: 'encrypted:' + safeStorage.encryptString(conn.uri).toString('base64')
-        }
-        if (conn.sshConfig?.password && !conn.sshConfig.password.startsWith('encrypted:')) {
-          conn.sshConfig = { ...conn.sshConfig, password: 'encrypted:' + safeStorage.encryptString(conn.sshConfig.password).toString('base64') }
-        }
-        if (conn.sshConfig?.passphrase && !conn.sshConfig.passphrase.startsWith('encrypted:')) {
-          conn.sshConfig = { ...conn.sshConfig, passphrase: 'encrypted:' + safeStorage.encryptString(conn.sshConfig.passphrase).toString('base64') }
-        }
-        if (conn.tlsConfig?.certificateKeyFilePassword && !conn.tlsConfig.certificateKeyFilePassword.startsWith('encrypted:')) {
-          conn.tlsConfig = { ...conn.tlsConfig, certificateKeyFilePassword: 'encrypted:' + safeStorage.encryptString(conn.tlsConfig.certificateKeyFilePassword).toString('base64') }
-        }
-        return conn
-      })
-    : connections
-  writeFileSync(CONNECTIONS_FILE, JSON.stringify(toSave, null, 2))
+  if (!isEncryptionAvailable()) {
+    // CLAUDE.md (Secrets): refuse rather than persist connection URIs and
+    // SSH/TLS passwords in cleartext when OS secure storage (safeStorage) is
+    // unavailable. The caller surfaces this to the user.
+    throw new Error(
+      'Cannot save connection: OS secure storage (safeStorage) is unavailable, so Mango will not ' +
+      'write connection credentials to disk in plaintext. On Linux, ensure a Secret Service / keyring ' +
+      '(e.g. gnome-keyring or KWallet) is running, then try again.'
+    )
+  }
+  const toSave = connections.map((conn) => {
+    conn = {
+      ...conn,
+      uri: conn.uri.startsWith('encrypted:')
+        ? conn.uri
+        : 'encrypted:' + safeStorage.encryptString(conn.uri).toString('base64')
+    }
+    if (conn.sshConfig?.password && !conn.sshConfig.password.startsWith('encrypted:')) {
+      conn.sshConfig = { ...conn.sshConfig, password: 'encrypted:' + safeStorage.encryptString(conn.sshConfig.password).toString('base64') }
+    }
+    if (conn.sshConfig?.passphrase && !conn.sshConfig.passphrase.startsWith('encrypted:')) {
+      conn.sshConfig = { ...conn.sshConfig, passphrase: 'encrypted:' + safeStorage.encryptString(conn.sshConfig.passphrase).toString('base64') }
+    }
+    if (conn.tlsConfig?.certificateKeyFilePassword && !conn.tlsConfig.certificateKeyFilePassword.startsWith('encrypted:')) {
+      conn.tlsConfig = { ...conn.tlsConfig, certificateKeyFilePassword: 'encrypted:' + safeStorage.encryptString(conn.tlsConfig.certificateKeyFilePassword).toString('base64') }
+    }
+    return conn
+  })
+  writeFileSync(CONNECTIONS_FILE, JSON.stringify(toSave, null, 2), { mode: 0o600 })
 }
 
 export function loadSettings(): Record<string, unknown> {

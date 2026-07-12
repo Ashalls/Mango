@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { writeFileSync, readdirSync, existsSync } from 'fs'
+import { writeFileSync, readdirSync, existsSync, mkdirSync, statSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
 import { app } from 'electron'
@@ -128,12 +128,27 @@ async function openMongoshMac(
   collection?: string
 ): Promise<void> {
   const dir = join(app.getPath('userData'), 'mongosh')
-  if (!existsSync(dir)) require('fs').mkdirSync(dir, { recursive: true, mode: 0o700 })
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+
+  // The launcher embeds the credential-bearing URI, so it must not linger on
+  // disk. Sweep STALE launch files (>30s — old enough that Terminal has already
+  // run and self-deleted them, but recent concurrent launches are left alone).
+  try {
+    const now = Date.now()
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.command')) continue
+      const p = join(dir, f)
+      try { if (now - statSync(p).mtimeMs > 30_000) unlinkSync(p) } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
 
   const setupArg = collection ? `--file ${quoteShell(writeSetupScript(database, collection))} --shell` : ''
   const cmdPath = join(dir, `launch-${randomBytes(8).toString('hex')}.command`)
   const script = [
     '#!/bin/bash',
+    // Delete this credential-bearing launcher the moment Terminal runs it, so
+    // the URI is on disk only for the ~1s between write and exec.
+    'rm -f "$0"',
     `exec mongosh ${quoteShell(uri)} --quiet ${setupArg}`
   ].join('\n')
   writeFileSync(cmdPath, script, { mode: 0o700 })
