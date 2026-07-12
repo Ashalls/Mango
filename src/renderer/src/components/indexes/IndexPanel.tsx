@@ -91,7 +91,7 @@ export function IndexPanel() {
     } finally {
       setLoading(false)
     }
-  }, [database, collection])
+  }, [database, collection, activeTab?.connectionId])
 
   useEffect(() => {
     fetchIndexes()

@@ -56,7 +56,7 @@ export function ValidationPanel() {
     } finally {
       setLoading(false)
     }
-  }, [database, collection])
+  }, [database, collection, activeTab?.connectionId])
 
   useEffect(() => {
     load()
