@@ -51,6 +51,17 @@ function isExpandable(value: unknown): boolean {
   return false
 }
 
+// Stable, collision-proof per-document identity for edit tracking, keyed by the
+// document OBJECT via a WeakMap. Unlike String(_id) it never collides when a
+// collection mixes an ObjectId and a string _id that render identically.
+const docRowIds = new WeakMap<object, string>()
+let docRowIdCounter = 0
+function rowIdFor(doc: object): string {
+  let id = docRowIds.get(doc)
+  if (!id) { id = `row-${docRowIdCounter++}`; docRowIds.set(doc, id) }
+  return id
+}
+
 // --- Parse edited value ---
 
 function parseEditValue(raw: string): unknown {
@@ -215,7 +226,10 @@ interface DocumentNodeProps {
 function DocumentNode({ doc, docIndex, isReadOnly, pendingEdits, onEdit }: DocumentNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const idValue = doc._id !== undefined ? String(doc._id) : `doc-${docIndex}`
-  const docKey = idValue
+  // Edit identity keyed by the document OBJECT, not String(_id): a collection
+  // mixing an ObjectId and a string _id with the same text would otherwise
+  // collide and cross-contaminate edits / save to the wrong document.
+  const docKey = rowIdFor(doc)
   const fieldCount = Object.keys(doc).length
 
   return (
@@ -315,8 +329,19 @@ export function TreeView() {
       // Apply each document's edits, resolving the doc by _id against the
       // CURRENT results; skip any no longer loaded rather than guess by index.
       for (const [docKey, fields] of editsByDocKey) {
-        const doc = documents.find((d) => d._id !== undefined && String(d._id) === docKey)
+        const doc = documents.find((d) => rowIdFor(d) === docKey)
         if (!doc?._id) continue
+        // Lossy display can't distinguish an ObjectId from a same-text string
+        // _id; if more than one loaded document shares this _id's text, a
+        // `{ _id }` filter would target the wrong one — refuse rather than guess.
+        const ambiguous =
+          documents.filter((d) => d._id !== undefined && String(d._id) === String(doc._id)).length > 1
+        if (ambiguous) {
+          throw new Error(
+            `Cannot safely save: multiple loaded documents share the _id "${String(doc._id)}" ` +
+            `(mixed ObjectId/string types). Edit this document from the JSON view instead.`
+          )
+        }
 
         const result = await trpc.mutation.updateOne.mutate({
           connectionId: tab.connectionId,
@@ -383,7 +408,7 @@ export function TreeView() {
       <div className="flex-1 min-h-0 overflow-auto">
         {documents.map((doc, index) => (
           <DocumentNode
-            key={doc._id ? String(doc._id) : index}
+            key={rowIdFor(doc)}
             doc={doc}
             docIndex={index}
             isReadOnly={isReadOnly}
