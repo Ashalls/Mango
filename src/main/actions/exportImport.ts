@@ -1226,12 +1226,17 @@ export async function importCollection(
   }
 
   const cleaned = docs.map((doc) => {
-    const { _id, ...rest } = doc
-    // Revive Extended-JSON markers so exported ObjectId/Date fields come back as
-    // real BSON rather than being re-inserted as strings/subdocuments.
-    return reviveExtended(rest) as Record<string, unknown>
+    // Revive Extended-JSON markers so exported ObjectId/Date/Decimal fields come
+    // back as real BSON rather than strings/subdocuments. Keep _id (revived too)
+    // so re-imported documents retain their identity and inter-document
+    // references — dropping it regenerated every ObjectId. Matches the
+    // DB-level streaming import worker, which also preserves _id.
+    return reviveExtended(doc) as Record<string, unknown>
   })
 
+  // Preserving _id means re-importing into a populated collection can hit a
+  // duplicate-key error — that's the intended signal (use "drop existing" to
+  // replace). A clean import into an empty/dropped collection inserts normally.
   const result = await db.collection(collection).insertMany(cleaned)
   return { count: result.insertedCount }
 }

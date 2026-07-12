@@ -1,7 +1,7 @@
-import { ObjectId } from 'mongodb'
+import { ObjectId, Binary, Decimal128, Long, Timestamp, UUID } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import * as connectionActions from './connection'
-import { serializeDocuments, serializeToShellSource } from '../services/serialize'
+import { serializeDocuments, serializeToShellSource, reviveExtended } from '../services/serialize'
 import * as queryLog from '../services/queryLog'
 import { MAX_RESULT_SIZE, MAX_REGEX_PATTERN_LENGTH, REGEX_QUANTIFIER_DEPTH_LIMIT } from '@shared/constants'
 import type { QueryOptions, QueryResult } from '@shared/types'
@@ -51,23 +51,46 @@ function assertAggregateWriteAllowed(pipeline: Record<string, unknown>[], connec
   if (blocked) throw new Error(blocked)
 }
 
+/** Real BSON instances that must be passed through untouched (never recursed
+ * into — Object.entries() would rebuild them as plain objects and lose the type). */
+function isBsonInstance(v: unknown): boolean {
+  return (
+    v instanceof ObjectId || v instanceof Binary || v instanceof Decimal128 ||
+    v instanceof Long || v instanceof Timestamp || v instanceof UUID ||
+    v instanceof Date || v instanceof RegExp
+  )
+}
+
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
 function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === 'string' && /^[0-9a-f]{24}$/i.test(value)) {
       result[key] = new ObjectId(value)
+    } else if (isBsonInstance(value)) {
+      result[key] = value
     } else if (Array.isArray(value)) {
       result[key] = value.map((v) =>
         typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
       )
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+    } else if (value && typeof value === 'object') {
       result[key] = convertObjectIds(value as Record<string, unknown>)
     } else {
       result[key] = value
     }
   }
   return result
+}
+
+/**
+ * Prepare a user/dialog-supplied filter for the driver. Revive Extended-JSON
+ * markers ($oid/$date/$numberDecimal/...) the shell parser and dialogs emit —
+ * WITHOUT this, a typed filter like `{createdAt: {$lt: ISODate(...)}}` reaches
+ * Mongo as `{$date: "..."}` and silently matches nothing — then coerce any
+ * remaining bare 24-hex strings to ObjectId.
+ */
+function reviveFilter(filter: Record<string, unknown>): Record<string, unknown> {
+  return convertObjectIds(reviveExtended(filter) as Record<string, unknown>)
 }
 
 /**
@@ -98,7 +121,7 @@ export async function find(options: QueryOptions): Promise<QueryResult> {
 
     const limit = Math.min(options.limit ?? 50, MAX_RESULT_SIZE)
     const skip = options.skip ?? 0
-    const processedFilter = convertObjectIds(options.filter ?? {})
+    const processedFilter = reviveFilter(options.filter ?? {})
 
     let cursor = col.find(processedFilter)
 
@@ -128,7 +151,7 @@ export async function count(
   connectionId?: string
 ): Promise<number> {
   const db = mongoService.getDb(database, connectionId)
-  return db.collection(collection).countDocuments(convertObjectIds(filter))
+  return db.collection(collection).countDocuments(reviveFilter(filter))
 }
 
 export async function aggregate(
@@ -178,7 +201,7 @@ export async function distinct(
   connectionId?: string
 ): Promise<unknown[]> {
   const db = mongoService.getDb(database, connectionId)
-  return db.collection(collection).distinct(field, convertObjectIds(filter))
+  return db.collection(collection).distinct(field, reviveFilter(filter))
 }
 
 export async function explain(
@@ -198,7 +221,7 @@ export async function explain(
   }
   const result = await db
     .collection(collection)
-    .find(convertObjectIds(filter))
+    .find(reviveFilter(filter))
     .explain('allPlansExecution')
   return result as unknown as Record<string, unknown>
 }

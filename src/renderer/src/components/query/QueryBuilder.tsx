@@ -80,7 +80,9 @@ function parseValue(value: string, type: FieldType): unknown {
   const trimmed = value.trim()
   if (type === 'Number') return Number(trimmed) || 0
   if (type === 'Boolean') return trimmed === 'true'
-  if (type === 'Date') return trimmed // Will be wrapped in $date if needed
+  // Emit an Extended-JSON $date marker so the backend revives it to a real BSON
+  // Date; a bare ISO string never matches Date-typed fields (silent zero-match).
+  if (type === 'Date') return trimmed ? { $date: trimmed } : trimmed
   if (type === 'ObjectId') return trimmed // Keep as string — backend convertObjectIds handles it
   if (trimmed === 'true') return true
   if (trimmed === 'false') return false

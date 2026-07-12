@@ -1,6 +1,16 @@
-import { ObjectId } from 'mongodb'
+import { ObjectId, Binary, Decimal128, Long, Timestamp, UUID } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 import { reviveExtended } from '../services/serialize'
+
+/** Real BSON instances that must be passed through untouched (never recursed
+ * into — Object.entries() would rebuild them as plain objects and lose the type). */
+function isBsonInstance(v: unknown): boolean {
+  return (
+    v instanceof ObjectId || v instanceof Binary || v instanceof Decimal128 ||
+    v instanceof Long || v instanceof Timestamp || v instanceof UUID ||
+    v instanceof Date || v instanceof RegExp
+  )
+}
 
 /** Recursively convert 24-char hex strings to ObjectId in filter values */
 function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
@@ -8,17 +18,29 @@ function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown>
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === 'string' && /^[0-9a-f]{24}$/i.test(value)) {
       result[key] = new ObjectId(value)
+    } else if (isBsonInstance(value)) {
+      result[key] = value
     } else if (Array.isArray(value)) {
       result[key] = value.map((v) =>
         typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
       )
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+    } else if (value && typeof value === 'object') {
       result[key] = convertObjectIds(value as Record<string, unknown>)
     } else {
       result[key] = value
     }
   }
   return result
+}
+
+/**
+ * Prepare a user/dialog-supplied filter for the driver: revive Extended-JSON
+ * markers ($oid/$date/...) so typed filters keep their BSON type instead of
+ * silently matching nothing, then coerce bare 24-hex strings to ObjectId.
+ * Applied to filters just as reviveExtended is applied to update bodies.
+ */
+function reviveFilter(filter: Record<string, unknown>): Record<string, unknown> {
+  return convertObjectIds(reviveExtended(filter) as Record<string, unknown>)
 }
 
 export async function insertOne(
@@ -41,7 +63,7 @@ export async function updateOne(
   connectionId?: string
 ): Promise<{ matchedCount: number; modifiedCount: number }> {
   const db = mongoService.getDb(database, connectionId)
-  const processedFilter = convertObjectIds(filter)
+  const processedFilter = reviveFilter(filter)
   // If update doesn't use operators, wrap in $set
   const wrapped = Object.keys(update).some((k) => k.startsWith('$'))
     ? update
@@ -60,7 +82,7 @@ export async function deleteOne(
   connectionId?: string
 ): Promise<{ deletedCount: number }> {
   const db = mongoService.getDb(database, connectionId)
-  const result = await db.collection(collection).deleteOne(convertObjectIds(filter))
+  const result = await db.collection(collection).deleteOne(reviveFilter(filter))
   return { deletedCount: result.deletedCount }
 }
 
@@ -71,7 +93,7 @@ export async function deleteMany(
   connectionId?: string
 ): Promise<{ deletedCount: number }> {
   const db = mongoService.getDb(database, connectionId)
-  const result = await db.collection(collection).deleteMany(convertObjectIds(filter))
+  const result = await db.collection(collection).deleteMany(reviveFilter(filter))
   return { deletedCount: result.deletedCount }
 }
 
@@ -95,7 +117,7 @@ export async function updateMany(
   connectionId?: string
 ): Promise<{ matchedCount: number; modifiedCount: number }> {
   const db = mongoService.getDb(database, connectionId)
-  const processedFilter = convertObjectIds(filter)
+  const processedFilter = reviveFilter(filter)
   const wrapped = Object.keys(update).some((k) => k.startsWith('$'))
     ? update
     : { $set: update }
