@@ -103,13 +103,19 @@ export function DocumentEditor({
       const docId = tab.selectedDocument!._id
       if (docId === undefined || docId === null) { setError('Document has no _id field'); return }
       const { _id: _ignoredId, ...fields } = updated
-      await trpc.mutation.updateOne.mutate({
+      const result = await trpc.mutation.updateOne.mutate({
         connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: docId },
         update: { $set: fields }
       })
+      // matchedCount 0 means nothing was written (deleted doc, or an _id whose
+      // BSON type didn't match) — surface it instead of showing a false success.
+      if (result.matchedCount === 0) {
+        setError('No document matched this _id — nothing was saved. It may have been deleted, or its _id type does not match.')
+        return
+      }
       // Clear the dirty flag and re-pull the freshly-stored document as shell
       // source (the fetch effect re-renders the editor with canonical types).
       useTabStore.getState().updateTab(tab.id, { isDirty: false })

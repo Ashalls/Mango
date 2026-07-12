@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { ChevronRight, ChevronDown, Save, Undo2 } from 'lucide-react'
 import { useTabStore } from '@renderer/store/tabStore'
 import { useConnectionStore } from '@renderer/store/connectionStore'
@@ -78,18 +78,21 @@ interface TreeNodeProps {
   value: unknown
   depth: number
   path: string
-  docIndex: number
+  docKey: string
   isReadOnly: boolean
   pendingEdits: Map<string, unknown>
   onEdit: (key: string, value: unknown) => void
 }
 
-function TreeNode({ fieldKey, value, depth, path, docIndex, isReadOnly, pendingEdits, onEdit }: TreeNodeProps) {
+function TreeNode({ fieldKey, value, depth, path, docKey, isReadOnly, pendingEdits, onEdit }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
 
-  const editKey = `${docIndex}.${path}`
+  // Key pending edits by the document's _id (docKey), not its row index — the
+  // index shifts on pagination/re-query and would send the edit to the wrong
+  // document. NUL separates docKey from the dotted field path unambiguously.
+  const editKey = `${docKey}\u0000${path}`
   const hasPendingEdit = pendingEdits.has(editKey)
   const displayValue = hasPendingEdit ? pendingEdits.get(editKey) : value
   const expandable = isExpandable(displayValue)
@@ -174,7 +177,7 @@ function TreeNode({ fieldKey, value, depth, path, docIndex, isReadOnly, pendingE
                   value={item}
                   depth={depth + 1}
                   path={`${path}.${idx}`}
-                  docIndex={docIndex}
+                  docKey={docKey}
                   isReadOnly={isReadOnly}
                   pendingEdits={pendingEdits}
                   onEdit={onEdit}
@@ -187,7 +190,7 @@ function TreeNode({ fieldKey, value, depth, path, docIndex, isReadOnly, pendingE
                   value={val}
                   depth={depth + 1}
                   path={`${path}.${key}`}
-                  docIndex={docIndex}
+                  docKey={docKey}
                   isReadOnly={isReadOnly}
                   pendingEdits={pendingEdits}
                   onEdit={onEdit}
@@ -212,6 +215,7 @@ interface DocumentNodeProps {
 function DocumentNode({ doc, docIndex, isReadOnly, pendingEdits, onEdit }: DocumentNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const idValue = doc._id !== undefined ? String(doc._id) : `doc-${docIndex}`
+  const docKey = idValue
   const fieldCount = Object.keys(doc).length
 
   return (
@@ -240,7 +244,7 @@ function DocumentNode({ doc, docIndex, isReadOnly, pendingEdits, onEdit }: Docum
               value={value}
               depth={1}
               path={key}
-              docIndex={docIndex}
+              docKey={docKey}
               isReadOnly={isReadOnly}
               pendingEdits={pendingEdits}
               onEdit={onEdit}
@@ -265,6 +269,14 @@ export function TreeView() {
   const [pendingEdits, setPendingEdits] = useState<Map<string, unknown>>(new Map())
   const [saving, setSaving] = useState(false)
 
+  // Discard pending edits whenever the underlying results change (page/filter/
+  // tab switch, or a post-save refresh). Pending edits are only meaningful
+  // against the exact documents currently on screen; keeping them across a
+  // reload could apply a $set to a document the user is no longer looking at.
+  useEffect(() => {
+    setPendingEdits(new Map())
+  }, [tab?.id, tab?.results])
+
   const isReadOnly = tab?.isView || activeProfile?.isReadOnly || false
 
   const documents = tab?.results?.documents ?? []
@@ -286,30 +298,38 @@ export function TreeView() {
     setSaving(true)
 
     try {
-      // Group edits by document index
-      const editsByDoc = new Map<number, Record<string, unknown>>()
+      // Group edits by document _id (NOT row index — the index shifts on
+      // pagination/re-query and would send a $set to the wrong document).
+      const editsByDocKey = new Map<string, Record<string, unknown>>()
 
       for (const [key, value] of pendingEdits) {
-        const dotIdx = key.indexOf('.')
-        const docIndex = parseInt(key.substring(0, dotIdx), 10)
-        const fieldPath = key.substring(dotIdx + 1)
+        const sep = key.indexOf('\u0000')
+        if (sep < 0) continue
+        const docKey = key.slice(0, sep)
+        const fieldPath = key.slice(sep + 1)
 
-        if (!editsByDoc.has(docIndex)) editsByDoc.set(docIndex, {})
-        editsByDoc.get(docIndex)![fieldPath] = value
+        if (!editsByDocKey.has(docKey)) editsByDocKey.set(docKey, {})
+        editsByDocKey.get(docKey)![fieldPath] = value
       }
 
-      // Apply each document's edits
-      for (const [docIndex, fields] of editsByDoc) {
-        const doc = documents[docIndex]
+      // Apply each document's edits, resolving the doc by _id against the
+      // CURRENT results; skip any no longer loaded rather than guess by index.
+      for (const [docKey, fields] of editsByDocKey) {
+        const doc = documents.find((d) => d._id !== undefined && String(d._id) === docKey)
         if (!doc?._id) continue
 
-        await trpc.mutation.updateOne.mutate({
+        const result = await trpc.mutation.updateOne.mutate({
           connectionId: tab.connectionId,
           database: tab.database,
           collection: tab.collection,
           filter: { _id: doc._id },
           update: { $set: fields }
         })
+        if (result.matchedCount === 0) {
+          throw new Error(
+            'No document matched — it may have been deleted or its _id type changed. Nothing was written.'
+          )
+        }
       }
 
       setPendingEdits(new Map())

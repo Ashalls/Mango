@@ -331,13 +331,19 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     const field = event.colDef.field
     if (!field) return
     try {
-      await trpc.mutation.updateOne.mutate({
+      const result = await trpc.mutation.updateOne.mutate({
         connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: event.data._id },
         update: { $set: { [field]: event.data[field] } }
       })
+      // matchedCount 0 means the write silently did nothing (e.g. an _id whose
+      // BSON type didn't match) — don't let the grid keep the unsaved value.
+      if (result.matchedCount === 0) {
+        alert('No document matched this _id — the edit was not saved. Refreshing.')
+        executeQuery()
+      }
     } catch (err) {
       alert(`Failed to update: ${err instanceof Error ? err.message : err}`)
       executeQuery()
