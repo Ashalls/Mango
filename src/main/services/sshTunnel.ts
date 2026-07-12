@@ -1,6 +1,6 @@
 import { Client } from 'ssh2'
 import { createServer, type Server, type AddressInfo } from 'net'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import { CONFIG_DIR } from '../constants'
@@ -22,17 +22,35 @@ const tunnels = new Map<string, TunnelHandle>()
 
 const KNOWN_HOSTS_FILE = join(CONFIG_DIR, 'ssh-known-hosts.json')
 
+/**
+ * Load the pinned host keys. Fails CLOSED: a missing file is fine (no pins yet,
+ * first use), but a corrupt or unreadable store THROWS rather than returning an
+ * empty set — otherwise a corrupted store would silently re-trust the next key.
+ */
 function loadKnownHosts(): Record<string, string> {
+  let raw: string
   try {
-    return JSON.parse(readFileSync(KNOWN_HOSTS_FILE, 'utf-8')) as Record<string, string>
-  } catch {
-    return {}
+    raw = readFileSync(KNOWN_HOSTS_FILE, 'utf-8')
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw new Error(`Cannot read SSH known-hosts store (${KNOWN_HOSTS_FILE}): ${(e as Error).message}`)
   }
+  const parsed = JSON.parse(raw) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`SSH known-hosts store is corrupt (${KNOWN_HOSTS_FILE})`)
+  }
+  return parsed as Record<string, string>
 }
 
+/** Persist atomically (temp + rename) so an interrupted write can't corrupt the
+ * store, and re-assert restrictive modes even on pre-existing paths. */
 function saveKnownHosts(hosts: Record<string, string>): void {
-  try { mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 }) } catch { /* exists */ }
-  writeFileSync(KNOWN_HOSTS_FILE, JSON.stringify(hosts, null, 2), { mode: 0o600 })
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 })
+  try { chmodSync(CONFIG_DIR, 0o700) } catch { /* best-effort */ }
+  const tmp = `${KNOWN_HOSTS_FILE}.${process.pid}.tmp`
+  writeFileSync(tmp, JSON.stringify(hosts, null, 2), { mode: 0o600 })
+  renameSync(tmp, KNOWN_HOSTS_FILE)
+  try { chmodSync(KNOWN_HOSTS_FILE, 0o600) } catch { /* best-effort */ }
 }
 
 function fingerprint(hostKey: Buffer): string {
@@ -60,21 +78,29 @@ export async function createTunnel(
       port: sshConfig.port,
       username: sshConfig.username,
       hostVerifier: (hostKey: Buffer): boolean => {
-        const fp = fingerprint(hostKey)
-        const known = loadKnownHosts()
-        const stored = known[hostId]
-        if (!stored) {
-          // Trust on first use — pin this fingerprint for future connections.
-          known[hostId] = fp
-          saveKnownHosts(known)
-          return true
+        try {
+          const fp = fingerprint(hostKey)
+          const known = loadKnownHosts()
+          const stored = known[hostId]
+          if (!stored) {
+            // Trust on first use — pin this fingerprint for future connections.
+            known[hostId] = fp
+            saveKnownHosts(known)
+            return true
+          }
+          if (stored === fp) return true
+          hostKeyError =
+            `SSH host key for ${hostId} has CHANGED (pinned ${stored}, server offered ${fp}). ` +
+            `This may be a man-in-the-middle attack. If the host legitimately rotated its key, ` +
+            `remove its entry from ${KNOWN_HOSTS_FILE} and reconnect.`
+          return false
+        } catch (err) {
+          // Fail CLOSED: if the pin store can't be read or persisted, reject the
+          // connection instead of trusting an unverified key (and never let the
+          // error escape the verifier as an uncaught main-process exception).
+          hostKeyError = `SSH host-key verification failed for ${hostId}: ${(err as Error).message}`
+          return false
         }
-        if (stored === fp) return true
-        hostKeyError =
-          `SSH host key for ${hostId} has CHANGED (pinned ${stored}, server offered ${fp}). ` +
-          `This may be a man-in-the-middle attack. If the host legitimately rotated its key, ` +
-          `remove its entry from ${KNOWN_HOSTS_FILE} and reconnect.`
-        return false
       }
     }
 
