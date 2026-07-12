@@ -222,7 +222,10 @@ function printShell(val: unknown, indent: number): string {
   if (val instanceof UUID) return `UUID(${quote(val.toString())})`
   if (val instanceof Binary) return `BinData(${val.sub_type}, ${quote(val.toString('base64'))})`
   if (val instanceof Timestamp) return `Timestamp(${val.getHighBits()}, ${val.getLowBits()})`
-  if (val instanceof RegExp) return quote(val.source) // rare in this path; keep readable
+  // RegExp as a constructor call (parseShellDocument parses it back to a
+  // $regex marker) — NOT a plain quoted string, which would round-trip the
+  // regex field into a string and corrupt it on save.
+  if (val instanceof RegExp) return `RegExp(${quote(val.source)}, ${quote(val.flags)})`
   if (isObjectIdLike(val)) return `ObjectId(${quote(objectIdToHex(val))})`
 
   if (Array.isArray(val)) {

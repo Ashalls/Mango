@@ -31,17 +31,22 @@ export function BulkToolbar() {
     executeQuery()
   }
 
-  function exportSelected() {
-    if (!activeTab?.results) return
-    const idSet = new Set(ids.map(String))
-    const docs = activeTab.results.documents.filter((d) => idSet.has(String(d._id)))
-    const blob = new Blob([JSON.stringify(docs, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${activeTab.collection}-${ids.length}docs.json`
-    a.click()
-    URL.revokeObjectURL(url)
+  async function exportSelected() {
+    if (!activeTab || ids.length === 0) return
+    // Route through the lossless exporter (serializeToEJSON + native save
+    // dialog) instead of JSON.stringify-ing the store's already-lossy display
+    // docs — the old path wrote ObjectIds/Dates as bare strings that couldn't
+    // round-trip back on import.
+    try {
+      await trpc.exportImport.exportCollection.mutate({
+        database: activeTab.database,
+        collection: activeTab.collection,
+        format: 'json',
+        filter: { _id: { $in: ids } }
+      })
+    } catch (err) {
+      alert(`Export failed: ${err instanceof Error ? err.message : err}`)
+    }
   }
 
   if (!activeTab) return null

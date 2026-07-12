@@ -255,6 +255,8 @@ class Parser {
         return { $binary: str(args[1]), $type: Number(args[0]).toString(16) }
       case 'Timestamp':
         return { $timestamp: { t: Number(args[0]) || 0, i: Number(args[1]) || 0 } }
+      case 'RegExp':
+        return { $regex: str(args[0]), $options: str(args[1]) }
       default:
         throw this.error(`Unsupported constructor '${name}()'`)
     }

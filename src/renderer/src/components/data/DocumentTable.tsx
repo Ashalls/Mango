@@ -27,6 +27,7 @@ import { useTabStore } from '@renderer/store/tabStore'
 import { useSettingsStore } from '@renderer/store/settingsStore'
 import { useConnectionStore } from '@renderer/store/connectionStore'
 import { trpc } from '@renderer/lib/trpc'
+import { parseShellDocument } from '@renderer/lib/shellJson'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -123,6 +124,51 @@ function parseEditValue(newValue: string, oldValue: unknown): unknown {
     try { return JSON.parse(newValue) } catch { /* fall through */ }
   }
   return newValue
+}
+
+/**
+ * Coerce an edited cell's new (string) value back to the field's ORIGINAL BSON
+ * type, taken from the document's typed shell source. The grid row is the lossy
+ * display copy (Date→ISO string, ObjectId→hex, Decimal128→string), so writing
+ * `event.data[field]` back would flatten the type. `original` is the field's
+ * value from `parseShellDocument` — an Extended-JSON marker for BSON types — and
+ * we re-wrap the new value in the same marker so `reviveExtended` restores the
+ * type on the server. An empty edit clears a typed field to null.
+ */
+function coerceEditToOriginalType(original: unknown, newVal: unknown): unknown {
+  const asStr =
+    newVal === null || newVal === undefined ? ''
+      : typeof newVal === 'object' ? JSON.stringify(newVal)
+      : String(newVal)
+
+  if (original && typeof original === 'object' && !Array.isArray(original)) {
+    const o = original as Record<string, unknown>
+    if ('$oid' in o) return asStr === '' ? null : (/^[0-9a-fA-F]{24}$/.test(asStr) ? { $oid: asStr } : asStr)
+    if ('$date' in o) return asStr === '' ? null : { $date: asStr }
+    if ('$numberDecimal' in o) return asStr === '' ? null : { $numberDecimal: asStr }
+    if ('$numberLong' in o) return asStr === '' ? null : { $numberLong: asStr }
+    if ('$uuid' in o) return asStr === '' ? null : { $uuid: asStr }
+    // Other BSON ($binary/$timestamp) or a plain sub-document: fall through.
+  }
+  if (typeof original === 'number') {
+    if (asStr.trim() === '') return null // clearing a number should not write 0
+    const n = Number(asStr)
+    return Number.isNaN(n) ? asStr : n
+  }
+  if (typeof original === 'boolean') {
+    if (asStr === 'true') return true
+    if (asStr === 'false') return false
+    return asStr
+  }
+  // String / null / unknown original: keep the raw string, but honour explicit
+  // null and JSON object/array input.
+  if (typeof newVal === 'string') {
+    const t = newVal.trim()
+    if (t === 'null') return null
+    if (t.startsWith('{') || t.startsWith('[')) { try { return JSON.parse(t) } catch { /* keep string */ } }
+    return newVal
+  }
+  return newVal
 }
 
 function DraggableCell(props: { value: unknown; colDef: { field?: string } }) {
@@ -330,20 +376,44 @@ export function DocumentTable({ viewMode: viewModeProp, onViewModeChange, popout
     if (!tab || !event.data?._id || event.oldValue === event.newValue) return
     const field = event.colDef.field
     if (!field) return
+
+    // Re-acquire the field's real BSON type from the stored document (the grid
+    // row is the lossy display copy) and re-wrap the edit so it keeps that type
+    // instead of being flattened to a string/number. The raw editor text is
+    // preferred over event.data[field], which the valueSetter already coerced.
+    const rawNew = event.newValue !== undefined ? event.newValue : event.data[field]
+    let updateValue: unknown = event.data[field]
+    try {
+      const src = await trpc.query.documentSource.query({
+        connectionId: tab.connectionId,
+        database: tab.database,
+        collection: tab.collection,
+        id: event.data._id
+      })
+      if (src?.source) {
+        const typedDoc = parseShellDocument(src.source) as Record<string, unknown>
+        updateValue = coerceEditToOriginalType(typedDoc[field], rawNew)
+      }
+    } catch {
+      // Couldn't resolve the typed source — write the (lossy) value rather than
+      // dropping the edit, but say so.
+      console.warn('[DocumentTable] typed source unavailable; writing edit without BSON type preservation')
+    }
+
     try {
       const result = await trpc.mutation.updateOne.mutate({
         connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: event.data._id },
-        update: { $set: { [field]: event.data[field] } }
+        update: { $set: { [field]: updateValue } }
       })
-      // matchedCount 0 means the write silently did nothing (e.g. an _id whose
-      // BSON type didn't match) — don't let the grid keep the unsaved value.
       if (result.matchedCount === 0) {
-        alert('No document matched this _id — the edit was not saved. Refreshing.')
-        executeQuery()
+        alert('No document matched this _id — the edit was not saved.')
       }
+      // Refresh so the grid shows the canonical stored value/type (and never a
+      // display value that diverges from what was actually written).
+      executeQuery()
     } catch (err) {
       alert(`Failed to update: ${err instanceof Error ? err.message : err}`)
       executeQuery()

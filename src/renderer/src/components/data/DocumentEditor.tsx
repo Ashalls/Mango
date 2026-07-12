@@ -20,6 +20,10 @@ export function DocumentEditor({
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // True once the typed shell source has loaded for the current document. While
+  // false the editor is showing the lossy plain-JSON fallback, and saving would
+  // write dates/ObjectIds as strings — so Save warns first.
+  const [sourceLoaded, setSourceLoaded] = useState(false)
   // Bumped after a save/discard to re-pull the document's shell source (its _id
   // is unchanged, so this is what re-triggers the fetch effect below).
   const [refreshTick, setRefreshTick] = useState(0)
@@ -41,6 +45,7 @@ export function DocumentEditor({
   useEffect(() => {
     if (selectedIdKey === null || !database || !collection) return
     let cancelled = false
+    setSourceLoaded(false)
     trpc.query.documentSource
       .query({ connectionId: tab?.connectionId, database, collection, id: selectedId })
       .then((res) => {
@@ -58,8 +63,9 @@ export function DocumentEditor({
         if (live && !live.isDirty && liveKey === selectedIdKey) {
           s.setEditorContentPristine(res.source)
         }
+        if (!cancelled) setSourceLoaded(true)
       })
-      .catch(() => { /* keep plain-JSON fallback */ })
+      .catch(() => { /* keep plain-JSON fallback; sourceLoaded stays false */ })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIdKey, database, collection, refreshTick])
@@ -93,6 +99,15 @@ export function DocumentEditor({
 
   const handleSave = async () => {
     if (!tab) return
+    // If the typed shell source never loaded, the editor is on the lossy JSON
+    // fallback — saving would flatten dates/ObjectIds to strings. Warn first.
+    if (!sourceLoaded) {
+      const proceed = window.confirm(
+        'The typed document source has not loaded, so the editor is showing a lossy JSON view. ' +
+        'Saving now may write dates and ObjectIds as plain strings. Save anyway?'
+      )
+      if (!proceed) return
+    }
     setError(null)
     setSaving(true)
     try {
@@ -103,12 +118,21 @@ export function DocumentEditor({
       const docId = tab.selectedDocument!._id
       if (docId === undefined || docId === null) { setError('Document has no _id field'); return }
       const { _id: _ignoredId, ...fields } = updated
+      // $unset any top-level field that existed on the original document but was
+      // removed in the editor — a plain $set leaves deleted fields in place, so
+      // they'd silently reappear on the next refresh.
+      const originalKeys = Object.keys(tab.selectedDocument ?? {}).filter((k) => k !== '_id')
+      const nextKeys = new Set(Object.keys(fields))
+      const unset: Record<string, ''> = {}
+      for (const k of originalKeys) if (!nextKeys.has(k)) unset[k] = ''
+      const update: Record<string, unknown> = { $set: fields }
+      if (Object.keys(unset).length > 0) update.$unset = unset
       const result = await trpc.mutation.updateOne.mutate({
         connectionId: tab.connectionId,
         database: tab.database,
         collection: tab.collection,
         filter: { _id: docId },
-        update: { $set: fields }
+        update
       })
       // matchedCount 0 means nothing was written (deleted doc, or an _id whose
       // BSON type didn't match) — surface it instead of showing a false success.
