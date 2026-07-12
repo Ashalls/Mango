@@ -1,19 +1,31 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, lstatSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { CONFIG_DIR } from '../constants'
 
 const CHAT_DIR = join(CONFIG_DIR, 'chat-history')
 
 /**
- * Resolve `<CHAT_DIR>/<sessionId>.json`, refusing any id that escapes CHAT_DIR
- * (path traversal). The tRPC schema already requires a UUID, but a compromised
- * renderer could bypass validation — so the write/read/delete sink itself must
- * guarantee containment.
+ * Resolve `<CHAT_DIR>/<sessionId>.json` for a session id that must be a bare
+ * filename component. The tRPC schema requires a UUID, but the sink itself must
+ * guarantee containment in case a caller bypasses validation:
+ *  - the charset (no `.`/`/`/`\`) makes `..` and path separators impossible;
+ *  - the resolved path is asserted to stay inside CHAT_DIR; and
+ *  - we refuse to follow a symlink planted at the target (lexical containment
+ *    alone doesn't resolve symlinks).
  */
 function sessionFilePath(sessionId: string): string {
-  const p = resolve(CHAT_DIR, `${sessionId}.json`)
-  if (p !== resolve(CHAT_DIR, `${sessionId}.json`) || !p.startsWith(resolve(CHAT_DIR) + sep)) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(sessionId)) {
     throw new Error('Invalid session id')
+  }
+  const p = resolve(CHAT_DIR, `${sessionId}.json`)
+  if (!p.startsWith(resolve(CHAT_DIR) + sep)) {
+    throw new Error('Invalid session id')
+  }
+  try {
+    if (lstatSync(p).isSymbolicLink()) throw new Error('Refusing to follow a symlinked session file')
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Refusing')) throw e
+    // ENOENT (a not-yet-created session file) is expected and fine.
   }
   return p
 }
@@ -86,10 +98,11 @@ export function listSessions(
     messageCount: number
   }[] = []
   try {
-    for (const file of readdirSync(CHAT_DIR)) {
-      if (!file.endsWith('.json')) continue
+    for (const entry of readdirSync(CHAT_DIR, { withFileTypes: true })) {
+      // Only real files directly in CHAT_DIR — never follow a symlink.
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue
       try {
-        const data = JSON.parse(readFileSync(join(CHAT_DIR, file), 'utf-8')) as ChatSession
+        const data = JSON.parse(readFileSync(join(CHAT_DIR, entry.name), 'utf-8')) as ChatSession
         if (data.tabId === tabId && data.messages.length > 0) {
           const firstUserMsg = data.messages.find((m) => m.role === 'user')
           results.push({
