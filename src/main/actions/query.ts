@@ -61,25 +61,32 @@ function isBsonInstance(v: unknown): boolean {
   )
 }
 
-/** Recursively convert 24-char hex strings to ObjectId in filter values */
-function convertObjectIds(obj: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Coerce 24-char hex strings to ObjectId — but ONLY under an `_id` path.
+ * Coercing every hex-looking string breaks fields that legitimately store a
+ * 24-char hex STRING (e.g. a `UserId`), which could then never be matched.
+ * Fields that really hold ObjectIds are searched via an explicit `{$oid}` marker
+ * (revived before this runs), so this fallback is only needed for bare `_id`.
+ */
+function convertObjectIds(obj: Record<string, unknown>, underId = false): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === 'string' && /^[0-9a-f]{24}$/i.test(value)) {
-      result[key] = new ObjectId(value)
+    const coerce = underId || key === '_id'
+    if (typeof value === 'string') {
+      result[key] = coerce && /^[0-9a-f]{24}$/i.test(value) ? new ObjectId(value) : value
     } else if (isBsonInstance(value)) {
       result[key] = value
     } else if (Array.isArray(value)) {
       result[key] = value.map((v) => {
-        if (typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v)) return new ObjectId(v)
+        if (typeof v === 'string') return coerce && /^[0-9a-f]{24}$/i.test(v) ? new ObjectId(v) : v
         if (isBsonInstance(v)) return v
-        // Recurse into object elements so hex strings inside $and/$or/$in-of-docs
-        // are coerced too (QueryBuilder emits {$and:[{_id:"…"}]} for multi-row).
-        if (v && typeof v === 'object') return convertObjectIds(v as Record<string, unknown>)
+        // Recurse into object elements so hex _ids inside $and/$or/$in-of-docs
+        // coerce too (QueryBuilder emits {$and:[{_id:"…"}]} for multi-row).
+        if (v && typeof v === 'object') return convertObjectIds(v as Record<string, unknown>, coerce)
         return v
       })
     } else if (value && typeof value === 'object') {
-      result[key] = convertObjectIds(value as Record<string, unknown>)
+      result[key] = convertObjectIds(value as Record<string, unknown>, coerce)
     } else {
       result[key] = value
     }

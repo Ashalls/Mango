@@ -83,7 +83,10 @@ function parseValue(value: string, type: FieldType): unknown {
   // Emit an Extended-JSON $date marker so the backend revives it to a real BSON
   // Date; a bare ISO string never matches Date-typed fields (silent zero-match).
   if (type === 'Date') return trimmed ? { $date: trimmed } : trimmed
-  if (type === 'ObjectId') return trimmed // Keep as string — backend convertObjectIds handles it
+  // Emit an explicit $oid marker so the backend revives it to a real ObjectId.
+  // (The backend only auto-coerces bare hex under _id, so a non-_id ObjectId
+  // field must be marked explicitly.)
+  if (type === 'ObjectId') return trimmed ? { $oid: trimmed } : trimmed
   if (trimmed === 'true') return true
   if (trimmed === 'false') return false
   if (trimmed === 'null') return null
@@ -151,14 +154,17 @@ function buildFilter(rows: FilterRow[], matchMode: MatchMode): Record<string, un
 
 // --- Infer field types from current results ---
 
-function inferFieldType(values: unknown[]): FieldType {
+function inferFieldType(values: unknown[], fieldName?: string): FieldType {
   for (const v of values) {
     if (v === null || v === undefined) continue
     if (typeof v === 'number') return 'Number'
     if (typeof v === 'boolean') return 'Boolean'
     if (typeof v === 'string') {
       if (/^\d{4}-\d{2}-\d{2}/.test(v)) return 'Date'
-      if (/^[0-9a-f]{24}$/.test(v)) return 'ObjectId'
+      // Only default to ObjectId for `_id`. Other 24-hex fields are frequently
+      // hex STRINGS (e.g. a UserId); guessing ObjectId makes them unsearchable.
+      // The user can still pick ObjectId explicitly for genuine reference fields.
+      if (fieldName === '_id' && /^[0-9a-f]{24}$/.test(v)) return 'ObjectId'
     }
   }
   return 'String'
@@ -217,7 +223,7 @@ export function QueryBuilder() {
     }
     return Object.entries(fieldMap).map(([name, values]) => ({
       name,
-      type: inferFieldType(values)
+      type: inferFieldType(values, name)
     })).sort((a, b) => a.name.localeCompare(b.name))
   }, [tab?.results])
 
