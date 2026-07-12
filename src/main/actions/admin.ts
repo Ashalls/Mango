@@ -1,26 +1,27 @@
 import type { IndexSpecification } from 'mongodb'
 import * as mongoService from '../services/mongodb'
 
-export async function dropDatabase(database: string): Promise<void> {
-  const client = mongoService.getClient()
-  await client.db(database).dropDatabase()
+export async function dropDatabase(database: string, connectionId?: string): Promise<void> {
+  const db = mongoService.getDb(database, connectionId)
+  await db.dropDatabase()
 }
 
-export async function dropCollection(database: string, collection: string): Promise<void> {
-  const db = mongoService.getDb(database)
+export async function dropCollection(database: string, collection: string, connectionId?: string): Promise<void> {
+  const db = mongoService.getDb(database, connectionId)
   await db.dropCollection(collection)
 }
 
-export async function createCollection(database: string, collection: string): Promise<void> {
-  const db = mongoService.getDb(database)
+export async function createCollection(database: string, collection: string, connectionId?: string): Promise<void> {
+  const db = mongoService.getDb(database, connectionId)
   await db.createCollection(collection)
 }
 
 export async function listIndexes(
   database: string,
-  collection: string
+  collection: string,
+  connectionId?: string
 ): Promise<Record<string, unknown>[]> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   return db.collection(collection).indexes()
 }
 
@@ -34,40 +35,44 @@ export async function createIndex(
     expireAfterSeconds?: number
     partialFilterExpression?: Record<string, unknown>
     name?: string
-  } = {}
+  } = {},
+  connectionId?: string
 ): Promise<string> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   return db.collection(collection).createIndex(fields as IndexSpecification, options)
 }
 
 export async function dropIndex(
   database: string,
   collection: string,
-  indexName: string
+  indexName: string,
+  connectionId?: string
 ): Promise<void> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   await db.collection(collection).dropIndex(indexName)
 }
 
 export async function renameCollection(
   database: string,
   oldName: string,
-  newName: string
+  newName: string,
+  connectionId?: string
 ): Promise<void> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   await db.renameCollection(oldName, newName)
 }
 
 export async function getIndexStats(
   database: string,
-  collection: string
+  collection: string,
+  connectionId?: string
 ): Promise<Record<string, unknown>[]> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   return db.collection(collection).aggregate([{ $indexStats: {} }]).toArray()
 }
 
-export async function truncateCollection(database: string, collection: string): Promise<{ deletedCount: number }> {
-  const db = mongoService.getDb(database)
+export async function truncateCollection(database: string, collection: string, connectionId?: string): Promise<{ deletedCount: number }> {
+  const db = mongoService.getDb(database, connectionId)
   const result = await db.collection(collection).deleteMany({})
   return { deletedCount: result.deletedCount }
 }
@@ -79,13 +84,14 @@ export async function truncateCollection(database: string, collection: string): 
  */
 export async function getValidator(
   database: string,
-  collection: string
+  collection: string,
+  connectionId?: string
 ): Promise<{
   validator: Record<string, unknown> | null
   validationLevel: 'off' | 'strict' | 'moderate'
   validationAction: 'error' | 'warn'
 }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const cols = await db.listCollections({ name: collection }).toArray()
   const info = cols[0] as { options?: { validator?: Record<string, unknown>; validationLevel?: string; validationAction?: string } } | undefined
   return {
@@ -104,9 +110,10 @@ export async function setValidator(
   collection: string,
   validator: Record<string, unknown> | null,
   level: 'off' | 'strict' | 'moderate' = 'strict',
-  action: 'error' | 'warn' = 'error'
+  action: 'error' | 'warn' = 'error',
+  connectionId?: string
 ): Promise<void> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   await db.command({
     collMod: collection,
     validator: validator ?? {},
@@ -124,9 +131,10 @@ export async function validateSample(
   database: string,
   collection: string,
   validator: Record<string, unknown>,
-  sampleSize: number = 200
+  sampleSize: number = 200,
+  connectionId?: string
 ): Promise<{ sampled: number; failed: number; failures: Record<string, unknown>[] }> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const sample = await db.collection(collection)
     .aggregate([{ $sample: { size: sampleSize } }])
     .toArray()
