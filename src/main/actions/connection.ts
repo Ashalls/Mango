@@ -22,6 +22,7 @@ export function saveConnection(input: {
   folderId?: string
 }): ConnectionProfile {
   const connections = configService.loadConnections()
+  const existing = input.id ? connections.find((c) => c.id === input.id) : undefined
   const profile: ConnectionProfile = {
     id: input.id || randomUUID(),
     name: input.name,
@@ -29,19 +30,20 @@ export function saveConnection(input: {
     color: input.color,
     isProduction: input.isProduction,
     isReadOnly: input.isReadOnly,
-    claudeAccess: input.claudeAccess ?? (input.isProduction ? 'readonly' : 'readwrite'),
-    claudeDbOverrides: input.claudeDbOverrides,
-    databaseCodebasePaths: input.databaseCodebasePaths,
+    claudeAccess: input.claudeAccess ?? existing?.claudeAccess ?? (input.isProduction ? 'readonly' : 'readwrite'),
+    // These are NOT surfaced by the connection dialog, so on edit they arrive as
+    // `undefined`. Preserve the existing values rather than wiping security /
+    // context metadata (a db-level readonly override, codebase paths, folder).
+    claudeDbOverrides: input.claudeDbOverrides ?? existing?.claudeDbOverrides,
+    databaseCodebasePaths: input.databaseCodebasePaths ?? existing?.databaseCodebasePaths,
+    folderId: input.folderId ?? existing?.folderId,
     sshConfig: input.sshConfig,
-    tlsConfig: input.tlsConfig,
-    folderId: input.folderId
+    tlsConfig: input.tlsConfig
   }
 
   const index = connections.findIndex((c) => c.id === profile.id)
   if (index >= 0) {
-    // Merge with existing profile to preserve fields not sent by the dialog
-    // (e.g. claudeDbOverrides, databaseCodebasePaths)
-    connections[index] = { ...connections[index], ...profile }
+    connections[index] = profile
   } else {
     connections.push(profile)
   }
