@@ -175,7 +175,14 @@ export async function aggregate(
   assertAggregateWriteAllowed(pipeline, connectionId)
   return queryLog.timed(database, collection, 'aggregate', { pipeline }, async () => {
     const db = mongoService.getDb(database, connectionId)
-    const results = await db.collection(collection).aggregate(pipeline).toArray()
+    // Bound the result server-side instead of materialising the whole cursor
+    // and slicing — a large/expensive pipeline could otherwise OOM the main
+    // process. Skip for write pipelines ($out/$merge must remain the last stage;
+    // they return no documents anyway).
+    const bounded = pipelineHasWriteStage(pipeline)
+      ? pipeline
+      : [...pipeline, { $limit: MAX_RESULT_SIZE }]
+    const results = await db.collection(collection).aggregate(bounded).toArray()
     return serializeDocuments(results.slice(0, MAX_RESULT_SIZE) as Record<string, unknown>[])
   })
 }
