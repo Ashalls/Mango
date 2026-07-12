@@ -107,16 +107,41 @@ export function CreateIndexDialog({
       if (ttl.trim() && Number(ttl) > 0) options.expireAfterSeconds = Number(ttl)
       if (customName.trim()) options.name = customName.trim()
 
-      // In edit mode, drop the old index first
       if (isEdit && editIndex) {
-        try {
-          await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
-        } catch {
-          // Old index may already be gone
+        const newName = options.name
+        if (newName && newName !== editIndex.name) {
+          // Different name: build the replacement FIRST so a failed build
+          // (invalid options, or duplicate data for a new unique index) leaves
+          // the existing index intact. Only drop the old one once the new one
+          // is confirmed created.
+          await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
+          try {
+            await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
+          } catch (err) {
+            setError(`New index created, but the old index "${editIndex.name}" could not be dropped: ${err instanceof Error ? err.message : err}`)
+            onCreated()
+            return
+          }
+        } else {
+          // Same name (or auto-named on the same keys): the index must be dropped
+          // before the replacement can be built — this is destructive. If the
+          // rebuild then fails, tell the user the collection is now missing it.
+          try {
+            await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
+          } catch { /* may already be gone */ }
+          try {
+            await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
+          } catch (err) {
+            throw new Error(
+              `The old index "${editIndex.name}" was dropped, but the new index failed to build: ` +
+              `${err instanceof Error ? err.message : err}. The collection is currently missing this ` +
+              `index — fix the definition and create it again.`
+            )
+          }
         }
+      } else {
+        await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
       }
-
-      await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
       resetForm()
       onCreated()
       onOpenChange(false)
