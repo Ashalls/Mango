@@ -467,7 +467,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                         onSelect={async () => {
                           const result = await trpc.exportImport.exportCollection.mutate({
-                            database: db.name, collection: col.name, format: 'json'
+                            connectionId, database: db.name, collection: col.name, format: 'json'
                           })
                           if (result) alert(`Exported ${result.count} documents to ${result.path}`)
                         }}
@@ -479,7 +479,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                         className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 outline-none hover:bg-accent"
                         onSelect={async () => {
                           const result = await trpc.exportImport.exportCollection.mutate({
-                            database: db.name, collection: col.name, format: 'csv'
+                            connectionId, database: db.name, collection: col.name, format: 'csv'
                           })
                           if (result) alert(`Exported ${result.count} documents to ${result.path}`)
                         }}

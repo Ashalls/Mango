@@ -1,5 +1,5 @@
 import { X, Copy, Check, Save, Undo2, Maximize2, Minimize2 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 import { Button } from '@renderer/components/ui/button'
 import { useTabStore } from '@renderer/store/tabStore'
@@ -24,6 +24,10 @@ export function DocumentEditor({
   // false the editor is showing the lossy plain-JSON fallback, and saving would
   // write dates/ObjectIds as strings — so Save warns first.
   const [sourceLoaded, setSourceLoaded] = useState(false)
+  // Top-level field names of the FULL typed source (not the possibly-projected
+  // grid row), captured when the source loads — used to compute $unset so a
+  // field the user deletes is actually removed, even under a projection.
+  const originalKeysRef = useRef<string[]>([])
   // Bumped after a save/discard to re-pull the document's shell source (its _id
   // is unchanged, so this is what re-triggers the fetch effect below).
   const [refreshTick, setRefreshTick] = useState(0)
@@ -66,6 +70,9 @@ export function DocumentEditor({
         // sourceLoaded false keeps the Save warning armed.
         if (live && !live.isDirty && liveKey === selectedIdKey) {
           s.setEditorContentPristine(res.source)
+          try {
+            originalKeysRef.current = Object.keys(parseShellDocument(res.source) as Record<string, unknown>)
+          } catch { originalKeysRef.current = [] }
           if (!cancelled) setSourceLoaded(true)
         }
       })
@@ -103,14 +110,14 @@ export function DocumentEditor({
 
   const handleSave = async () => {
     if (!tab) return
-    // If the typed shell source never loaded, the editor is on the lossy JSON
-    // fallback — saving would flatten dates/ObjectIds to strings. Warn first.
+    // Refuse to save while the editor is on the lossy JSON fallback — writing it
+    // would flatten dates/ObjectIds/Decimals to strings, violating the
+    // lossless-write rule. Re-attempt the typed-source fetch instead of offering
+    // a "save anyway" that corrupts types.
     if (!sourceLoaded) {
-      const proceed = window.confirm(
-        'The typed document source has not loaded, so the editor is showing a lossy JSON view. ' +
-        'Saving now may write dates and ObjectIds as plain strings. Save anyway?'
-      )
-      if (!proceed) return
+      setError("The document's typed source hasn't loaded yet, so saving could corrupt BSON types. Retrying — please try again in a moment.")
+      setRefreshTick((t) => t + 1)
+      return
     }
     setError(null)
     setSaving(true)
@@ -122,10 +129,11 @@ export function DocumentEditor({
       const docId = tab.selectedDocument!._id
       if (docId === undefined || docId === null) { setError('Document has no _id field'); return }
       const { _id: _ignoredId, ...fields } = updated
-      // $unset any top-level field that existed on the original document but was
-      // removed in the editor — a plain $set leaves deleted fields in place, so
-      // they'd silently reappear on the next refresh.
-      const originalKeys = Object.keys(tab.selectedDocument ?? {}).filter((k) => k !== '_id')
+      // $unset any top-level field that existed on the loaded typed source but
+      // was removed in the editor — a plain $set leaves deleted fields in place,
+      // so they'd silently reappear on the next refresh. Keyed off the full
+      // source (originalKeysRef), not the possibly-projected grid row.
+      const originalKeys = originalKeysRef.current.filter((k) => k !== '_id')
       const nextKeys = new Set(Object.keys(fields))
       const unset: Record<string, ''> = {}
       for (const k of originalKeys) if (!nextKeys.has(k)) unset[k] = ''

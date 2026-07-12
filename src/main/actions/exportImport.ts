@@ -1090,24 +1090,30 @@ export async function importDatabaseDump(
     } catch { /* Fall back to worker-based JSON import */ }
   }
 
-  const { readdirSync } = await import('fs')
-  const { join } = await import('path')
-  let files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
-  if (collections && collections.length > 0) {
-    const selected = new Set(collections)
-    files = files.filter((f: string) => selected.has(f.replace('.json', '')))
+  try {
+    const { readdirSync } = await import('fs')
+    const { join } = await import('path')
+    let files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
+    if (collections && collections.length > 0) {
+      const selected = new Set(collections)
+      files = files.filter((f: string) => selected.has(f.replace('.json', '')))
+    }
+    const hasViews = !collections && existsSync(join(importDir, '_views.json'))
+
+    op.total = files.length + (hasViews ? 1 : 0)
+    op.collections = [
+      ...files.map((f: string) => ({ name: f.replace('.json', ''), status: 'pending' as const, copied: 0, total: 0 })),
+      ...(hasViews ? [{ name: 'Views', status: 'pending' as const, copied: 0, total: 0 }] : [])
+    ]
+    op.currentStep = 'Starting import...'
+    emitProgress('operation:progress', op)
+
+    return await runImportWorker(profile!.uri, database, importDir, files, dropExisting, hasViews, op)
+  } catch (err) {
+    // Never leave the card stuck 'running' if the fallback setup throws.
+    emitProgress('operation:progress', { ...op, status: 'error', currentStep: err instanceof Error ? err.message : 'Import failed' })
+    throw err
   }
-  const hasViews = !collections && existsSync(join(importDir, '_views.json'))
-
-  op.total = files.length + (hasViews ? 1 : 0)
-  op.collections = [
-    ...files.map((f: string) => ({ name: f.replace('.json', ''), status: 'pending' as const, copied: 0, total: 0 })),
-    ...(hasViews ? [{ name: 'Views', status: 'pending' as const, copied: 0, total: 0 }] : [])
-  ]
-  op.currentStep = 'Starting import...'
-  emitProgress('operation:progress', op)
-
-  return runImportWorker(profile!.uri, database, importDir, files, dropExisting, hasViews, op)
 }
 
 /**
@@ -1187,41 +1193,54 @@ export async function importDatabaseFromDump(
   if (profile?.isReadOnly) throw new Error('Cannot import to a read-only connection')
   if (!profile) throw new Error('Connection not found')
 
-  // Try mongorestore first (only for full database imports)
-  if (!collections) {
-    try {
-      const args = ['--db', targetDatabase, '--dir', importDir]
-      if (dropTarget) args.push('--drop')
-      await runMongoTool('mongorestore', profile.uri, args)
-      return { database: targetDatabase, collections: -1, documents: -1 }
-    } catch { /* Fall back to worker-based JSON import */ }
-  }
-
-  const { readdirSync } = await import('fs')
-  const { join } = await import('path')
-  let files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
-  if (collections && collections.length > 0) {
-    const selected = new Set(collections)
-    files = files.filter((f: string) => selected.has(f.replace('.json', '')))
-  }
-  const hasViews = !collections && existsSync(join(importDir, '_views.json'))
-
+  // One progress card for the whole operation (mongorestore fast-path OR worker).
   const opId = `import-${++opCounter}-${Date.now()}`
   const op: OperationProgress = {
     id: opId, type: 'import',
     label: `Import ${targetDatabase} → ${profile.name}`,
-    status: 'running', currentStep: 'Starting import...', processed: 0,
-    total: files.length + (hasViews ? 1 : 0),
-    collections: [
+    status: 'running', currentStep: 'Starting import...', processed: 0, total: 0,
+    collections: [], startedAt: Date.now()
+  }
+
+  // Try mongorestore first (only for full database imports). Emit a running
+  // phase so a successful restore is visible (it previously emitted nothing);
+  // on failure the same card continues into the worker fallback below.
+  if (!collections) {
+    emitProgress('operation:progress', { ...op, currentStep: 'Running mongorestore…' })
+    try {
+      const args = ['--db', targetDatabase, '--dir', importDir]
+      if (dropTarget) args.push('--drop')
+      await runMongoTool('mongorestore', profile.uri, args)
+      emitProgress('operation:progress', { ...op, status: 'done', currentStep: 'Complete (mongorestore)' })
+      return { database: targetDatabase, collections: -1, documents: -1 }
+    } catch { /* Fall back to worker-based JSON import */ }
+  }
+
+  try {
+    const { readdirSync } = await import('fs')
+    const { join } = await import('path')
+    let files = readdirSync(importDir).filter((f: string) => f.endsWith('.json') && !f.startsWith('_') && !f.endsWith('.indexes.json'))
+    if (collections && collections.length > 0) {
+      const selected = new Set(collections)
+      files = files.filter((f: string) => selected.has(f.replace('.json', '')))
+    }
+    const hasViews = !collections && existsSync(join(importDir, '_views.json'))
+
+    op.total = files.length + (hasViews ? 1 : 0)
+    op.collections = [
       ...files.map((f: string) => ({ name: f.replace('.json', ''), status: 'pending' as const, copied: 0, total: 0 })),
       ...(hasViews ? [{ name: 'Views', status: 'pending' as const, copied: 0, total: 0 }] : [])
-    ],
-    startedAt: Date.now()
-  }
-  emitProgress('operation:progress', op)
+    ]
+    op.currentStep = 'Starting import...'
+    emitProgress('operation:progress', op)
 
-  const result = await runImportWorker(profile.uri, targetDatabase, importDir, files, dropTarget, hasViews, op)
-  return { database: targetDatabase, ...result }
+    const result = await runImportWorker(profile.uri, targetDatabase, importDir, files, dropTarget, hasViews, op)
+    return { database: targetDatabase, ...result }
+  } catch (err) {
+    // Never leave the card stuck 'running' if the fallback setup throws.
+    emitProgress('operation:progress', { ...op, status: 'error', currentStep: err instanceof Error ? err.message : 'Import failed' })
+    throw err
+  }
 }
 
 export async function importCollection(

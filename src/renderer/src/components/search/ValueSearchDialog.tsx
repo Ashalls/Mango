@@ -87,7 +87,7 @@ export function ValueSearchDialog({ open, onClose }: ValueSearchDialogProps) {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, scopeType, selectedDb, selectedCol, regex, caseInsensitive])
+  }, [searchTerm, scopeType, selectedDb, selectedCol, regex, caseInsensitive, activeConnection])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch()

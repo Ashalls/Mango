@@ -104,7 +104,8 @@ function parseValue(value: string, type: FieldType): unknown {
 
 function buildRowFilter(row: FilterRow): Record<string, unknown> | null {
   if (!row.field.trim()) return null
-  const val = parseValue(row.value, row.type)
+  const raw = row.value
+  const val = parseValue(raw, row.type)
 
   switch (row.operator) {
     case 'eq':
@@ -119,20 +120,25 @@ function buildRowFilter(row: FilterRow): Record<string, unknown> | null {
       return { [row.field]: { $lt: val } }
     case 'lte':
       return { [row.field]: { $lte: val } }
+    // Regex operators always match on the literal typed string — never the
+    // parsed value, which for ObjectId/Date is an EJSON marker object that would
+    // stringify to "[object Object]".
     case 'contains':
-      return { [row.field]: { $regex: String(val), $options: 'i' } }
+      return { [row.field]: { $regex: raw, $options: 'i' } }
     case 'not_contains':
-      return { [row.field]: { $not: { $regex: String(val), $options: 'i' } } }
+      return { [row.field]: { $not: { $regex: raw, $options: 'i' } } }
     case 'starts_with':
-      return { [row.field]: { $regex: `^${String(val)}`, $options: 'i' } }
+      return { [row.field]: { $regex: `^${raw}`, $options: 'i' } }
     case 'ends_with':
-      return { [row.field]: { $regex: `${String(val)}$`, $options: 'i' } }
+      return { [row.field]: { $regex: `${raw}$`, $options: 'i' } }
     case 'regex':
-      return { [row.field]: { $regex: String(val) } }
+      return { [row.field]: { $regex: raw } }
+    // in/nin: split the raw string and type EACH element, so ObjectId/Date rows
+    // become an array of per-value markers instead of one stringified marker.
     case 'in':
-      return { [row.field]: { $in: Array.isArray(val) ? val : String(val).split(',').map((s) => s.trim()) } }
+      return { [row.field]: { $in: Array.isArray(val) ? val : raw.split(',').map((s) => parseValue(s.trim(), row.type)) } }
     case 'nin':
-      return { [row.field]: { $nin: Array.isArray(val) ? val : String(val).split(',').map((s) => s.trim()) } }
+      return { [row.field]: { $nin: Array.isArray(val) ? val : raw.split(',').map((s) => parseValue(s.trim(), row.type)) } }
     case 'exists':
       return { [row.field]: { $exists: true } }
     case 'not_exists':
@@ -160,7 +166,10 @@ function inferFieldType(values: unknown[], fieldName?: string): FieldType {
     if (typeof v === 'number') return 'Number'
     if (typeof v === 'boolean') return 'Boolean'
     if (typeof v === 'string') {
-      if (/^\d{4}-\d{2}-\d{2}/.test(v)) return 'Date'
+      // Require a time component (full ISO datetime) before guessing Date — a
+      // bare YYYY-MM-DD is more often a plain string, and inferring Date makes
+      // the row emit a $date marker that then matches zero string-typed values.
+      if (/^\d{4}-\d{2}-\d{2}T/.test(v)) return 'Date'
       // Only default to ObjectId for `_id`. Other 24-hex fields are frequently
       // hex STRINGS (e.g. a UserId); guessing ObjectId makes them unsearchable.
       // The user can still pick ObjectId explicitly for genuine reference fields.
