@@ -1100,6 +1100,15 @@ export async function importDatabaseDump(
     }
     const hasViews = !collections && existsSync(join(importDir, '_views.json'))
 
+    if (files.length === 0 && !hasViews) {
+      // Nothing for the JSON worker to do — e.g. a BSON-only dump whose
+      // mongorestore fast-path failed lands here. Report an error instead of
+      // letting the worker finish instantly and emit a false 'done'.
+      const msg = 'No importable JSON files found. BSON dumps require mongorestore, which was unavailable.'
+      emitProgress('operation:progress', { ...op, status: 'error', currentStep: msg })
+      throw new Error(msg)
+    }
+
     op.total = files.length + (hasViews ? 1 : 0)
     op.collections = [
       ...files.map((f: string) => ({ name: f.replace('.json', ''), status: 'pending' as const, copied: 0, total: 0 })),
@@ -1225,6 +1234,15 @@ export async function importDatabaseFromDump(
       files = files.filter((f: string) => selected.has(f.replace('.json', '')))
     }
     const hasViews = !collections && existsSync(join(importDir, '_views.json'))
+
+    if (files.length === 0 && !hasViews) {
+      // Nothing for the JSON worker to do — e.g. a BSON-only dump whose
+      // mongorestore fast-path failed lands here. Report an error instead of
+      // letting the worker finish instantly and emit a false 'done'.
+      const msg = 'No importable JSON files found. BSON dumps require mongorestore, which was unavailable.'
+      emitProgress('operation:progress', { ...op, status: 'error', currentStep: msg })
+      throw new Error(msg)
+    }
 
     op.total = files.length + (hasViews ? 1 : 0)
     op.collections = [

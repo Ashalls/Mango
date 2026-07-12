@@ -226,7 +226,10 @@ export function DocumentEditor({
             lineNumbers: 'on',
             scrollBeyondLastLine: false,
             wordWrap: 'on',
-            readOnly: false,
+            // Read-only until the typed shell source has loaded, so the user can
+            // never edit (and then save) the lossy JSON fallback — this prevents
+            // the edit-before-load race rather than trapping the save afterward.
+            readOnly: !sourceLoaded,
             automaticLayout: true,
             tabSize: 2
           }}
