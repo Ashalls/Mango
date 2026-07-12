@@ -131,14 +131,15 @@ async function openMongoshMac(
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
 
   // The launcher embeds the credential-bearing URI, so it must not linger on
-  // disk. Sweep STALE launch files (>30s — old enough that Terminal has already
-  // run and self-deleted them, but recent concurrent launches are left alone).
+  // disk. It self-deletes on run (below); this sweeps only clearly-STALE
+  // leftovers (>5 min — Terminal always execs within seconds, so this can't
+  // race a pending concurrent launch) e.g. from a launch the user cancelled.
   try {
     const now = Date.now()
     for (const f of readdirSync(dir)) {
       if (!f.endsWith('.command')) continue
       const p = join(dir, f)
-      try { if (now - statSync(p).mtimeMs > 30_000) unlinkSync(p) } catch { /* ignore */ }
+      try { if (now - statSync(p).mtimeMs > 300_000) unlinkSync(p) } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
 

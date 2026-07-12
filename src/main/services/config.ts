@@ -11,7 +11,16 @@ function ensureConfigDir(): void {
 
 function isEncryptionAvailable(): boolean {
   try {
-    return safeStorage.isEncryptionAvailable()
+    if (!safeStorage.isEncryptionAvailable()) return false
+    // Reject Electron's Linux `basic_text` backend: it "encrypts" with a
+    // hardcoded key and provides no real OS-backed protection — treat it as
+    // unavailable so we refuse to persist rather than store weakly-obscured
+    // secrets. (getSelectedStorageBackend may be absent on older Electron.)
+    const withBackend = safeStorage as unknown as { getSelectedStorageBackend?: () => string }
+    if (typeof withBackend.getSelectedStorageBackend === 'function') {
+      if (withBackend.getSelectedStorageBackend() === 'basic_text') return false
+    }
+    return true
   } catch {
     return false
   }
@@ -56,17 +65,18 @@ export function loadConnections(): ConnectionProfile[] {
 }
 
 export function saveConnections(connections: ConnectionProfile[]): void {
-  ensureConfigDir()
   if (!isEncryptionAvailable()) {
     // CLAUDE.md (Secrets): refuse rather than persist connection URIs and
     // SSH/TLS passwords in cleartext when OS secure storage (safeStorage) is
-    // unavailable. The caller surfaces this to the user.
+    // unavailable. Checked before touching the filesystem. The caller surfaces
+    // this to the user.
     throw new Error(
       'Cannot save connection: OS secure storage (safeStorage) is unavailable, so Mango will not ' +
       'write connection credentials to disk in plaintext. On Linux, ensure a Secret Service / keyring ' +
       '(e.g. gnome-keyring or KWallet) is running, then try again.'
     )
   }
+  ensureConfigDir()
   const toSave = connections.map((conn) => {
     conn = {
       ...conn,
