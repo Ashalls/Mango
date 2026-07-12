@@ -1017,21 +1017,7 @@ export async function exportDatabaseDump(
   const profile = connections.find((c) => c.id === connectionId)
   if (!profile) throw new Error('Connection not found')
 
-  // Try mongodump first (only for full database exports)
-  if (!collections) {
-    try {
-      await runMongoTool('mongodump', profile.uri, ['--db', database, '--out', outDir])
-      const opId = `export-${++opCounter}-${Date.now()}`
-      const op: OperationProgress = {
-        id: opId, type: 'export', label: `Export ${database} from ${profile.name}`,
-        status: 'done', currentStep: 'Complete (mongodump)', processed: 0, total: 0,
-        collections: [], startedAt: Date.now()
-      }
-      emitProgress('operation:progress', op)
-      return { path: outDir }
-    } catch { /* Fall back to worker-based JSON export */ }
-  }
-
+  // One progress card for the whole operation (mongodump fast-path OR worker).
   const opId = `export-${++opCounter}-${Date.now()}`
   const op: OperationProgress = {
     id: opId, type: 'export',
@@ -1039,8 +1025,23 @@ export async function exportDatabaseDump(
     status: 'running', currentStep: 'Starting export...', processed: 0, total: 0,
     collections: [], startedAt: Date.now()
   }
-  emitProgress('operation:progress', op)
 
+  // Try mongodump first (only for full database exports). Emit a running phase
+  // so the card shows a live spinner during the dump instead of nothing until
+  // it finishes; on failure the SAME card continues into the worker fallback
+  // (which streams per-collection progress). mongodump can't report per-
+  // collection counts, so this path stays a single indeterminate step.
+  if (!collections) {
+    emitProgress('operation:progress', { ...op, currentStep: 'Running mongodump…' })
+    try {
+      await runMongoTool('mongodump', profile.uri, ['--db', database, '--out', outDir])
+      emitProgress('operation:progress', { ...op, status: 'done', currentStep: 'Complete (mongodump)' })
+      return { path: outDir }
+    } catch { /* Fall back to worker-based JSON export */ }
+  }
+
+  op.currentStep = 'Starting export...'
+  emitProgress('operation:progress', op)
   return runExportWorker(profile.uri, database, outDir, op, collections)
 }
 
@@ -1065,12 +1066,26 @@ export async function importDatabaseDump(
   if (canceled || filePaths.length === 0) return null
   const importDir = filePaths[0]
 
-  // Try mongorestore first (only for full database imports)
+  // One progress card for the whole operation (mongorestore fast-path OR worker).
+  const opId = `import-${++opCounter}-${Date.now()}`
+  const op: OperationProgress = {
+    id: opId, type: 'import',
+    label: `Import to ${database} on ${profile?.name || 'unknown'}`,
+    status: 'running', currentStep: 'Starting import...', processed: 0, total: 0,
+    collections: [], startedAt: Date.now()
+  }
+
+  // Try mongorestore first (only for full database imports). Emit a running
+  // phase (previously the mongorestore path emitted NOTHING, so a successful
+  // restore showed no card at all); on failure the same card continues into the
+  // worker fallback below.
   if (!collections) {
+    emitProgress('operation:progress', { ...op, currentStep: 'Running mongorestore…' })
     try {
       const args = ['--db', database, '--dir', importDir]
       if (dropExisting) args.push('--drop')
       await runMongoTool('mongorestore', profile!.uri, args)
+      emitProgress('operation:progress', { ...op, status: 'done', currentStep: 'Complete (mongorestore)' })
       return { collections: -1, documents: -1 }
     } catch { /* Fall back to worker-based JSON import */ }
   }
@@ -1084,18 +1099,12 @@ export async function importDatabaseDump(
   }
   const hasViews = !collections && existsSync(join(importDir, '_views.json'))
 
-  const opId = `import-${++opCounter}-${Date.now()}`
-  const op: OperationProgress = {
-    id: opId, type: 'import',
-    label: `Import to ${database} on ${profile?.name || 'unknown'}`,
-    status: 'running', currentStep: 'Starting import...', processed: 0,
-    total: files.length + (hasViews ? 1 : 0),
-    collections: [
-      ...files.map((f: string) => ({ name: f.replace('.json', ''), status: 'pending' as const, copied: 0, total: 0 })),
-      ...(hasViews ? [{ name: 'Views', status: 'pending' as const, copied: 0, total: 0 }] : [])
-    ],
-    startedAt: Date.now()
-  }
+  op.total = files.length + (hasViews ? 1 : 0)
+  op.collections = [
+    ...files.map((f: string) => ({ name: f.replace('.json', ''), status: 'pending' as const, copied: 0, total: 0 })),
+    ...(hasViews ? [{ name: 'Views', status: 'pending' as const, copied: 0, total: 0 }] : [])
+  ]
+  op.currentStep = 'Starting import...'
   emitProgress('operation:progress', op)
 
   return runImportWorker(profile!.uri, database, importDir, files, dropExisting, hasViews, op)
