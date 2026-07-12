@@ -128,7 +128,16 @@ export function CreateIndexDialog({
           // rebuild then fails, tell the user the collection is now missing it.
           try {
             await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
-          } catch { /* may already be gone */ }
+          } catch (err) {
+            // Only "index not found" is safe to ignore (the index is already
+            // gone). Any other drop failure (permission/connection/server) means
+            // the old index likely still exists — surface it and DON'T proceed,
+            // so we never falsely claim the index was dropped.
+            const msg = err instanceof Error ? err.message : String(err)
+            if (!/not found|indexnotfound/i.test(msg)) {
+              throw new Error(`Could not drop the existing index "${editIndex.name}": ${msg}`)
+            }
+          }
           try {
             await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
           } catch (err) {
