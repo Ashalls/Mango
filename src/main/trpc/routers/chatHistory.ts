@@ -6,7 +6,7 @@ export const chatHistoryRouter = router({
     .input(
       z.object({
         tabId: z.string(),
-        sessionId: z.string(),
+        sessionId: z.string().uuid(),
         messages: z.array(
           z.object({
             id: z.string(),
@@ -24,7 +24,7 @@ export const chatHistoryRouter = router({
     }),
 
   load: procedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().uuid() }))
     .query(({ input }) => {
       return chatHistory.loadSession(input.sessionId)
     }),
@@ -36,7 +36,7 @@ export const chatHistoryRouter = router({
     }),
 
   delete: procedure
-    .input(z.object({ sessionId: z.string() }))
+    .input(z.object({ sessionId: z.string().uuid() }))
     .mutation(({ input }) => {
       chatHistory.deleteSession(input.sessionId)
       return { deleted: true }

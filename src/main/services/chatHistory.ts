@@ -1,8 +1,22 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import { CONFIG_DIR } from '../constants'
 
 const CHAT_DIR = join(CONFIG_DIR, 'chat-history')
+
+/**
+ * Resolve `<CHAT_DIR>/<sessionId>.json`, refusing any id that escapes CHAT_DIR
+ * (path traversal). The tRPC schema already requires a UUID, but a compromised
+ * renderer could bypass validation — so the write/read/delete sink itself must
+ * guarantee containment.
+ */
+function sessionFilePath(sessionId: string): string {
+  const p = resolve(CHAT_DIR, `${sessionId}.json`)
+  if (p !== resolve(CHAT_DIR, `${sessionId}.json`) || !p.startsWith(resolve(CHAT_DIR) + sep)) {
+    throw new Error('Invalid session id')
+  }
+  return p
+}
 
 interface ChatMessage {
   id: string
@@ -32,7 +46,7 @@ export function saveSession(
   sdkSessionId?: string
 ): ChatSession {
   ensureDir()
-  const filePath = join(CHAT_DIR, `${sessionId}.json`)
+  const filePath = sessionFilePath(sessionId)
   const existing = existsSync(filePath)
     ? (JSON.parse(readFileSync(filePath, 'utf-8')) as ChatSession)
     : null
@@ -50,7 +64,8 @@ export function saveSession(
 
 export function loadSession(sessionId: string): ChatSession | null {
   ensureDir()
-  const filePath = join(CHAT_DIR, `${sessionId}.json`)
+  let filePath: string
+  try { filePath = sessionFilePath(sessionId) } catch { return null }
   if (!existsSync(filePath)) return null
   try {
     return JSON.parse(readFileSync(filePath, 'utf-8'))
@@ -96,6 +111,6 @@ export function listSessions(
 }
 
 export function deleteSession(sessionId: string): void {
-  const filePath = join(CHAT_DIR, `${sessionId}.json`)
+  const filePath = sessionFilePath(sessionId)
   if (existsSync(filePath)) unlinkSync(filePath)
 }
