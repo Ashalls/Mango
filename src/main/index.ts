@@ -95,7 +95,12 @@ function createWindow(): BrowserWindow {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Only hand http(s) URLs to the OS — never file:, custom-protocol, or
+    // malformed targets (mirrors the shell:openExternal IPC handler).
+    try {
+      const u = new URL(details.url)
+      if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(details.url)
+    } catch { /* ignore malformed/blocked urls */ }
     return { action: 'deny' }
   })
 
