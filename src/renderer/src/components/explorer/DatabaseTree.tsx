@@ -99,7 +99,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
 
   const handleDropDatabase = async (dbName: string) => {
     try {
-      await trpc.admin.dropDatabase.mutate({ database: dbName })
+      await trpc.admin.dropDatabase.mutate({ connectionId, database: dbName })
       await loadDatabases()
     } catch (err) {
       alert(`Failed to drop database: ${err instanceof Error ? err.message : err}`)
@@ -108,7 +108,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
 
   const handleDropCollection = async (dbName: string, colName: string) => {
     try {
-      await trpc.admin.dropCollection.mutate({ database: dbName, collection: colName })
+      await trpc.admin.dropCollection.mutate({ connectionId, database: dbName, collection: colName })
       alert(`Collection "${colName}" has been dropped from database "${dbName}".`)
       await loadCollections(dbName, connectionId)
     } catch (err) {
@@ -118,7 +118,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
 
   const handleTruncateCollection = async (dbName: string, colName: string) => {
     try {
-      const result = await trpc.admin.truncateCollection.mutate({ database: dbName, collection: colName })
+      const result = await trpc.admin.truncateCollection.mutate({ connectionId, database: dbName, collection: colName })
       alert(`Truncated "${colName}": ${result.deletedCount} documents deleted`)
       await loadCollections(dbName, connectionId)
     } catch (err) {
@@ -130,6 +130,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
     if (!newCollInput.trim()) return
     try {
       await trpc.admin.createCollection.mutate({
+        connectionId,
         database: dbName,
         collection: newCollInput.trim()
       })
@@ -149,7 +150,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
       return
     }
     try {
-      await trpc.admin.renameCollection.mutate({ database: dbName, oldName, newName })
+      await trpc.admin.renameCollection.mutate({ connectionId, database: dbName, oldName, newName })
       setRenameTarget(null)
       setRenameInput('')
       await loadCollections(dbName, connectionId)
@@ -501,7 +502,7 @@ export function DatabaseTree({ databases, searchFilter, connectionId, onCopyData
                           onSelect={async () => {
                             try {
                               const result = await trpc.exportImport.importCollection.mutate({
-                                database: db.name, collection: col.name
+                                connectionId, database: db.name, collection: col.name
                               })
                               if (result) alert(`Imported ${result.count} documents`)
                             } catch (err) {

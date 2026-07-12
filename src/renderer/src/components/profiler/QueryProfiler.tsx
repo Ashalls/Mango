@@ -11,6 +11,7 @@ import type { ProfilerEntry } from '@shared/types'
 ModuleRegistry.registerModules([AllCommunityModule])
 
 interface QueryProfilerProps {
+  connectionId?: string
   database: string
 }
 
@@ -43,12 +44,15 @@ interface ProfilerCache {
 }
 const stateCache = new Map<string, ProfilerCache>()
 
-export function QueryProfiler({ database }: QueryProfilerProps) {
+export function QueryProfiler({ connectionId, database }: QueryProfilerProps) {
   const effectiveTheme = useSettingsStore((s) => s.effectiveTheme)
   const openTab = useTabStore((s) => s.openTab)
   const tabs = useTabStore((s) => s.tabs)
 
-  const cached = stateCache.get(database)
+  // Cache/state keyed by connection+db, so two connections sharing a database
+  // name don't share profiler state or logs.
+  const cacheKey = `${connectionId ?? ''}:${database}`
+  const cached = stateCache.get(cacheKey)
 
   const [level, setLevel] = useState<ProfilingLevel>(cached?.level ?? 0)
   const [slowms, setSlowms] = useState(cached?.slowms ?? 100)
@@ -67,13 +71,13 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
 
   // Save state to cache on every change
   useEffect(() => {
-    stateCache.set(database, { level, slowms, autoRefresh, entries, selectedEntry, mode, status })
-  }, [database, level, slowms, autoRefresh, entries, selectedEntry, mode, status])
+    stateCache.set(cacheKey, { level, slowms, autoRefresh, entries, selectedEntry, mode, status })
+  }, [cacheKey, level, slowms, autoRefresh, entries, selectedEntry, mode, status])
 
   // Detect mode on mount
   useEffect(() => {
     if (cached?.mode && cached.mode !== 'loading') return
-    trpc.profiler.getStatus.query({ database })
+    trpc.profiler.getStatus.query({ connectionId, database })
       .then((s) => {
         setStatus({ was: s.was, slowms: s.slowms })
         setMode(s.mode as ProfilerMode)
@@ -100,7 +104,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
         const data = await trpc.profiler.getAppLog.query({ limit: 200 })
         setEntries(data as ProfilerEntry[])
       } else if (mode === 'native') {
-        const data = await trpc.profiler.getData.query({ database, limit: 100 })
+        const data = await trpc.profiler.getData.query({ connectionId, database, limit: 100 })
         setEntries(data as ProfilerEntry[])
       }
     } catch (err) {
@@ -139,8 +143,8 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     if (mode !== 'native') return
     setApplyLoading(true)
     try {
-      await trpc.profiler.setLevel.mutate({ database, level, slowms: level === 1 ? slowms : undefined })
-      const s = await trpc.profiler.getStatus.query({ database })
+      await trpc.profiler.setLevel.mutate({ connectionId, database, level, slowms: level === 1 ? slowms : undefined })
+      const s = await trpc.profiler.getStatus.query({ connectionId, database })
       setStatus({ was: s.was, slowms: s.slowms })
       setError(null)
       if (level > 0 && autoRefresh === 'off') setAutoRefresh('5s')
@@ -156,8 +160,8 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     if (mode !== 'native') return
     setApplyLoading(true)
     try {
-      await trpc.profiler.setLevel.mutate({ database, level: 0 })
-      const s = await trpc.profiler.getStatus.query({ database })
+      await trpc.profiler.setLevel.mutate({ connectionId, database, level: 0 })
+      const s = await trpc.profiler.getStatus.query({ connectionId, database })
       setStatus({ was: s.was, slowms: s.slowms })
       setLevel(0)
       setAutoRefresh('off')
@@ -179,7 +183,7 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     }
     setClearLoading(true)
     try {
-      await trpc.profiler.clear.mutate({ database })
+      await trpc.profiler.clear.mutate({ connectionId, database })
       setEntries([])
       setSelectedEntry(null)
     } catch (err) {
@@ -198,7 +202,9 @@ export function QueryProfiler({ database }: QueryProfilerProps) {
     if (!selectedEntry) return
     const parts = selectedEntry.ns.split('.')
     if (parts.length >= 2) {
-      const connId = tabs.find((t) => t.database === database)?.connectionId
+      // Use this profiler tab's own connection, not the first tab that merely
+      // shares the database name (which could be a different server).
+      const connId = connectionId ?? tabs.find((t) => t.database === database)?.connectionId
       const collectionName = parts.slice(1).join('.')
       if (connId) openTab(connId, database, collectionName)
     }

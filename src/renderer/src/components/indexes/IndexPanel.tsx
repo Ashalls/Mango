@@ -67,12 +67,12 @@ export function IndexPanel() {
     if (!database || !collection) return
     setLoading(true)
     try {
-      const result = await trpc.admin.listIndexes.query({ database, collection })
+      const result = await trpc.admin.listIndexes.query({ connectionId: activeTab?.connectionId, database, collection })
       setIndexes(result as IndexInfo[])
 
       // Stats may not be available on all servers
       try {
-        const statsResult = await trpc.admin.indexStats.query({ database, collection })
+        const statsResult = await trpc.admin.indexStats.query({ connectionId: activeTab?.connectionId, database, collection })
         const map = new Map<string, number>()
         for (const s of statsResult) {
           const name = s.name as string
@@ -116,7 +116,7 @@ export function IndexPanel() {
   const handleDrop = async (indexName: string) => {
     if (!window.confirm(`Drop index "${indexName}"? This action cannot be undone.`)) return
     try {
-      await trpc.admin.dropIndex.mutate({ database, collection, indexName })
+      await trpc.admin.dropIndex.mutate({ connectionId: activeTab?.connectionId, database, collection, indexName })
       await fetchIndexes()
     } catch (err) {
       console.error('Failed to drop index:', err)
@@ -277,6 +277,7 @@ export function IndexPanel() {
           setCreateDialogOpen(o)
           if (!o) setEditingIndex(undefined)
         }}
+        connectionId={activeTab?.connectionId}
         database={database}
         collection={collection}
         onCreated={fetchIndexes}

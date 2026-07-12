@@ -43,7 +43,7 @@ export function ValidationPanel() {
     setLoading(true)
     setError(null)
     try {
-      const v = await trpc.admin.getValidator.query({ database, collection })
+      const v = await trpc.admin.getValidator.query({ connectionId: activeTab?.connectionId, database, collection })
       if (v.validator && Object.keys(v.validator).length > 0) {
         setText(JSON.stringify(v.validator, null, 2))
       } else {
@@ -85,7 +85,7 @@ export function ValidationPanel() {
     setBusy('sample')
     try {
       const result = await trpc.admin.validateSample.mutate({
-        database, collection, validator, sampleSize: 500
+        connectionId: activeTab?.connectionId, database, collection, validator, sampleSize: 500
       })
       setSample(result)
     } catch (err) {
@@ -106,7 +106,7 @@ export function ValidationPanel() {
     setBusy('apply')
     try {
       await trpc.admin.setValidator.mutate({
-        database, collection, validator,
+        connectionId: activeTab?.connectionId, database, collection, validator,
         validationLevel: level, validationAction: action
       })
       setSuccess('Validator applied')
@@ -125,7 +125,7 @@ export function ValidationPanel() {
     setBusy('remove')
     try {
       await trpc.admin.setValidator.mutate({
-        database, collection, validator: null,
+        connectionId: activeTab?.connectionId, database, collection, validator: null,
         validationLevel: 'off', validationAction: 'error'
       })
       setSuccess('Validator removed')

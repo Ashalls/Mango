@@ -1,7 +1,7 @@
 import * as mongoService from '../services/mongodb'
 
-export async function getProfilingStatus(database: string): Promise<{ was: number; slowms: number; mode: 'native' | 'currentOp' }> {
-  const db = mongoService.getDb(database)
+export async function getProfilingStatus(database: string, connectionId?: string): Promise<{ was: number; slowms: number; mode: 'native' | 'currentOp' }> {
+  const db = mongoService.getDb(database, connectionId)
   try {
     const result = await db.command({ profile: -1 })
     return { was: result.was, slowms: result.slowms, mode: 'native' }
@@ -15,9 +15,10 @@ export async function getProfilingStatus(database: string): Promise<{ was: numbe
 export async function setProfilingLevel(
   database: string,
   level: 0 | 1 | 2,
-  slowms?: number
+  slowms?: number,
+  connectionId?: string
 ): Promise<void> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const cmd: Record<string, unknown> = { profile: level }
   if (slowms !== undefined) cmd.slowms = slowms
   await db.command(cmd)
@@ -26,9 +27,10 @@ export async function setProfilingLevel(
 export async function getProfilingData(
   database: string,
   limit: number = 100,
-  namespace?: string
+  namespace?: string,
+  connectionId?: string
 ): Promise<Record<string, unknown>[]> {
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
   const filter: Record<string, unknown> = {}
   if (namespace) filter.ns = namespace
 
@@ -55,9 +57,10 @@ export async function getProfilingData(
 
 export async function getCurrentOps(
   database: string,
-  limit: number = 100
+  limit: number = 100,
+  connectionId?: string
 ): Promise<Record<string, unknown>[]> {
-  const adminDb = mongoService.getDb('admin')
+  const adminDb = mongoService.getDb('admin', connectionId)
 
   try {
     // Try $currentOp aggregation (works on CosmosDB and MongoDB 3.6+)
@@ -101,7 +104,7 @@ export async function getCurrentOps(
   }
 }
 
-export async function clearProfilingData(database: string): Promise<void> {
-  const db = mongoService.getDb(database)
+export async function clearProfilingData(database: string, connectionId?: string): Promise<void> {
+  const db = mongoService.getDb(database, connectionId)
   await db.collection('system.profile').drop().catch(() => {})
 }
