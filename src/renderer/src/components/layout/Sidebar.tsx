@@ -716,6 +716,7 @@ export function Sidebar() {
           onSubmit={async (values) => {
             try {
               await trpc.admin.createCollection.mutate({
+                connectionId: showCreateDb,
                 database: values.database,
                 collection: values.collection
               })

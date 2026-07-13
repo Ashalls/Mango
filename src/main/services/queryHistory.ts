@@ -70,7 +70,9 @@ export function saveEntry(entry: Omit<QueryHistoryEntry, 'id' | 'timestamp' | 'p
   const unpinned = buf.filter((e) => !e.pinned)
   if (pinned.length + unpinned.length > MAX_ENTRIES) {
     const keep = MAX_ENTRIES - pinned.length
-    buffer = [...pinned, ...unpinned.slice(-keep)]
+    // keep <= 0 (all slots taken by pinned entries): drop all unpinned. Guard
+    // explicitly — `slice(-0)` is `slice(0)` and would keep every unpinned entry.
+    buffer = [...pinned, ...(keep > 0 ? unpinned.slice(-keep) : [])]
   }
   scheduleFlush()
   return full

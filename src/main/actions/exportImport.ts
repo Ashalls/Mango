@@ -1264,7 +1264,8 @@ export async function importDatabaseFromDump(
 export async function importCollection(
   database: string,
   collection: string,
-  dropExisting: boolean = false
+  dropExisting: boolean = false,
+  connectionId?: string
 ): Promise<{ count: number } | null> {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
@@ -1289,7 +1290,7 @@ export async function importCollection(
 
   if (docs.length === 0) return { count: 0 }
 
-  const db = mongoService.getDb(database)
+  const db = mongoService.getDb(database, connectionId)
 
   if (dropExisting) {
     try { await db.dropCollection(collection) } catch { /* may not exist */ }

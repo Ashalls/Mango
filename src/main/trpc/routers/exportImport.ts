@@ -1,6 +1,7 @@
 import { router, procedure, z } from '../context'
 import * as exportImportActions from '../../actions/exportImport'
 import * as migrationActions from '../../actions/migration'
+import * as connectionActions from '../../actions/connection'
 
 export const exportImportRouter = router({
   listCollections: procedure
@@ -84,11 +85,14 @@ export const exportImportRouter = router({
 
   importCollection: procedure
     .input(z.object({
+      connectionId: z.string().optional(),
       database: z.string(),
       collection: z.string(),
       dropExisting: z.boolean().default(false)
     }))
     .mutation(async ({ input }) => {
-      return exportImportActions.importCollection(input.database, input.collection, input.dropExisting)
+      const blocked = connectionActions.checkReadOnly(input.connectionId)
+      if (blocked) throw new Error(blocked)
+      return exportImportActions.importCollection(input.database, input.collection, input.dropExisting, input.connectionId)
     })
 })

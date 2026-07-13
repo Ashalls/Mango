@@ -21,6 +21,7 @@ export interface EditIndexInfo {
 interface CreateIndexDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  connectionId?: string
   database: string
   collection: string
   onCreated: () => void
@@ -31,6 +32,7 @@ interface CreateIndexDialogProps {
 export function CreateIndexDialog({
   open,
   onOpenChange,
+  connectionId,
   database,
   collection,
   onCreated,
@@ -114,9 +116,9 @@ export function CreateIndexDialog({
           // (invalid options, or duplicate data for a new unique index) leaves
           // the existing index intact. Only drop the old one once the new one
           // is confirmed created.
-          await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
+          await trpc.admin.createIndex.mutate({ connectionId, database, collection, fields: fieldsObj, options })
           try {
-            await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
+            await trpc.admin.dropIndex.mutate({ connectionId, database, collection, indexName: editIndex.name })
           } catch (err) {
             setError(`New index created, but the old index "${editIndex.name}" could not be dropped: ${err instanceof Error ? err.message : err}`)
             onCreated()
@@ -127,7 +129,7 @@ export function CreateIndexDialog({
           // before the replacement can be built — this is destructive. If the
           // rebuild then fails, tell the user the collection is now missing it.
           try {
-            await trpc.admin.dropIndex.mutate({ database, collection, indexName: editIndex.name })
+            await trpc.admin.dropIndex.mutate({ connectionId, database, collection, indexName: editIndex.name })
           } catch (err) {
             // Only "index not found" is safe to ignore (the index is already
             // gone). Any other drop failure (permission/connection/server) means
@@ -139,7 +141,7 @@ export function CreateIndexDialog({
             }
           }
           try {
-            await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
+            await trpc.admin.createIndex.mutate({ connectionId, database, collection, fields: fieldsObj, options })
           } catch (err) {
             throw new Error(
               `The old index "${editIndex.name}" was dropped, but the new index failed to build: ` +
@@ -149,7 +151,7 @@ export function CreateIndexDialog({
           }
         }
       } else {
-        await trpc.admin.createIndex.mutate({ database, collection, fields: fieldsObj, options })
+        await trpc.admin.createIndex.mutate({ connectionId, database, collection, fields: fieldsObj, options })
       }
       resetForm()
       onCreated()
